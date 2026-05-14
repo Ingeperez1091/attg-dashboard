@@ -1,0 +1,51 @@
+{
+  "description": "ADF artifact mapping used for publish/import alignment in local source control.",
+  "pipelines": [
+    {
+      "name": "PL_DenomLoad_Weekly",
+      "path": "pipelines/denominator-load-weekly/pipeline.json",
+      "type": "Pipeline"
+    },
+    {
+      "name": "PL_MetricsProcessing",
+      "path": "pipelines/metrics-processing/pipeline.json",
+      "type": "Pipeline"
+    },
+    {
+      "name": "PL_MetricsOrchestrator",
+      "path": "pipelines/metrics-orchestrator/pipeline.json",
+      "type": "Pipeline"
+    },
+    {
+      "name": "PL_NumeratorValidationProcessing",
+      "path": "pipelines/numerator-processing/pipeline.json",
+      "type": "Pipeline"
+    }
+  ],
+  "triggers": [
+    {
+      "name": "TR_DenomLoad_Weekly",
+      "path": "pipelines/triggers/TR_DenomLoad_Weekly.json",
+      "type": "ScheduleTrigger",
+      "targets": [
+        "PL_DenomLoad_Weekly"
+      ]
+    },
+    {
+      "name": "TR_MetricsOrchestrator_Schedule",
+      "path": "pipelines/triggers/TR_MetricsOrchestrator_Schedule.json",
+      "type": "ScheduleTrigger",
+      "targets": [
+        "PL_MetricsOrchestrator"
+      ]
+    }
+  ],
+  "recommendedPublishOrder": [
+    "PL_DenomLoad_Weekly",
+    "PL_MetricsProcessing",
+    "PL_MetricsOrchestrator",
+    "PL_NumeratorValidationProcessing",
+    "TR_DenomLoad_Weekly",
+    "TR_MetricsOrchestrator_Schedule"
+  ]
+}

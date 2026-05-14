@@ -1,0 +1,58 @@
+{
+  "name": "PL_MetricsProcessing",
+  "properties": {
+    "description": "Skeleton ADF pipeline for per-application validation, filtering, matching, and metric calculation.",
+    "parameters": {
+      "applicationId": {
+        "type": "String"
+      },
+      "runId": {
+        "type": "String"
+      },
+      "triggerSource": {
+        "type": "String",
+        "defaultValue": "ADF"
+      },
+      "actorUserId": {
+        "type": "String"
+      }
+    },
+    "activities": [
+      {
+        "name": "ExecutePipelineRun",
+        "type": "SqlServerStoredProcedure",
+        "typeProperties": {
+          "storedProcedureName": "app.usp_ExecutePipelineRun",
+          "storedProcedureParameters": {
+            "runId": {
+              "value": "@pipeline().parameters.runId",
+              "type": "String"
+            },
+            "applicationId": {
+              "value": "@pipeline().parameters.applicationId",
+              "type": "String"
+            },
+            "triggerSource": {
+              "value": "@pipeline().parameters.triggerSource",
+              "type": "String"
+            },
+            "actorUserId": {
+              "value": "@pipeline().parameters.actorUserId",
+              "type": "String"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "00:30:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 30
+        }
+      }
+    ],
+    "annotations": [
+      "metrics-processing",
+      "per-application",
+      "architecture-aligned-skeleton"
+    ]
+  }
+}

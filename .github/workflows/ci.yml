@@ -1,0 +1,411 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24.x"
+
+jobs:
+  detect-capabilities:
+    name: Detect Capabilities
+    runs-on: windows-latest
+    outputs:
+      has_frontend: ${{ steps.detect.outputs.has_frontend }}
+      has_packagejson: ${{ steps.detect.outputs.has_packagejson }}
+      has_lockfile: ${{ steps.detect.outputs.has_lockfile }}
+      has_lint: ${{ steps.detect.outputs.has_lint }}
+      has_typecheck: ${{ steps.detect.outputs.has_typecheck }}
+      has_test: ${{ steps.detect.outputs.has_test }}
+      has_e2e: ${{ steps.detect.outputs.has_e2e }}
+      has_terraform: ${{ steps.detect.outputs.has_terraform }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect available components
+        id: detect
+        shell: pwsh
+        run: |
+          $has_frontend = "false"
+          $has_packagejson = "false"
+          $has_lockfile = "false"
+          $has_lint = "false"
+          $has_typecheck = "false"
+          $has_test = "false"
+          $has_e2e = "false"
+          $has_terraform = "false"
+
+          if (Test-Path "src/frontend") {
+            $has_frontend = "true"
+          }
+
+          if (Test-Path "package.json") {
+            $has_packagejson = "true"
+            try {
+              $pkg = Get-Content "package.json" | ConvertFrom-Json
+              if ($pkg.scripts -and $pkg.scripts.lint) {
+                $has_lint = "true"
+              }
+              if ($pkg.scripts -and $pkg.scripts.test) {
+                $has_test = "true"
+              }
+            } catch { }
+          }
+
+          if (Test-Path "package-lock.json") {
+            $has_lockfile = "true"
+          }
+
+          if (Test-Path "tsconfig.json") {
+            $has_typecheck = "true"
+          }
+
+          if ((Test-Path "playwright.config.ts") -and (Test-Path "tests/e2e")) {
+            $has_e2e = "true"
+          }
+
+          if ((Test-Path "infra/terraform") -and ((Get-ChildItem -Path "infra/terraform" -Filter "*.tf" -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0)) {
+            $has_terraform = "true"
+          }
+
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "has_frontend=$has_frontend"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "has_packagejson=$has_packagejson"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "has_lockfile=$has_lockfile"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "has_lint=$has_lint"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "has_typecheck=$has_typecheck"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "has_test=$has_test"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "has_e2e=$has_e2e"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "has_terraform=$has_terraform"
+
+  dependency-security:
+    name: Dependency Security
+    runs-on: windows-latest
+    needs: detect-capabilities
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enforce workflow action reference policy
+        shell: pwsh
+        run: |
+          $workflowFiles = Get-ChildItem -Path ".github/workflows" -Filter "*.yml" -File -ErrorAction SilentlyContinue
+          $violations = @()
+
+          foreach ($file in $workflowFiles) {
+            $lines = Get-Content -Path $file.FullName
+            foreach ($line in $lines) {
+              if ($line -match '^\s*uses:\s*([^\s#]+)') {
+                $ref = $Matches[1]
+
+                if ($ref.StartsWith("./")) {
+                  continue
+                }
+
+                if ($ref -notmatch '@') {
+                  $violations += "$($file.Name): action reference '$ref' is missing an explicit version."
+                  continue
+                }
+
+                $version = $ref.Split('@')[-1]
+                if ($version -in @("main", "master", "latest")) {
+                  $violations += "$($file.Name): action reference '$ref' uses a floating branch/tag."
+                }
+              }
+            }
+          }
+
+          if ($violations.Count -gt 0) {
+            $violations | ForEach-Object { Write-Host "::error::$_" }
+            throw "Workflow action reference policy violations found."
+          }
+
+      - name: Skip npm audit (frontend package.json not available yet)
+        if: needs.detect-capabilities.outputs.has_packagejson != 'true'
+        run: |
+          echo "::notice::Skipping npm audit: package.json is not available yet."
+
+      - name: Setup Node.js
+        if: needs.detect-capabilities.outputs.has_packagejson == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore npm cache
+        if: needs.detect-capabilities.outputs.has_packagejson == 'true' && needs.detect-capabilities.outputs.has_lockfile == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+
+      - name: Install dependencies (lockfile)
+        if: needs.detect-capabilities.outputs.has_packagejson == 'true' && needs.detect-capabilities.outputs.has_lockfile == 'true'
+        run: npm ci
+
+      - name: Install dependencies (no lockfile)
+        if: needs.detect-capabilities.outputs.has_packagejson == 'true' && needs.detect-capabilities.outputs.has_lockfile != 'true'
+        run: npm install
+
+      - name: npm audit (fail on high/critical)
+        if: needs.detect-capabilities.outputs.has_packagejson == 'true'
+        run: npm audit --audit-level=high
+
+      - name: Skip Terraform provider version review (IaC not available yet)
+        if: needs.detect-capabilities.outputs.has_terraform != 'true'
+        run: |
+          echo "::notice::Skipping Terraform provider version review: infra/terraform with .tf files is not available yet."
+
+      - name: Terraform provider version review
+        if: needs.detect-capabilities.outputs.has_terraform == 'true'
+        shell: pwsh
+        run: |
+          $tfFiles = Get-ChildItem -Path "infra/terraform" -Filter "*.tf" -Recurse -ErrorAction SilentlyContinue
+          if ($null -eq $tfFiles -or $tfFiles.Count -eq 0) {
+            Write-Host "::notice::No Terraform files found for provider version review."
+            exit 0
+          }
+
+          $combined = ($tfFiles | ForEach-Object { Get-Content $_.FullName -Raw }) -join "`n"
+          $hasRequiredProviders = $combined -match 'required_providers'
+          $hasProviderVersion = $combined -match 'version\s*=\s*"[^"]+"'
+
+          if (-not $hasRequiredProviders) {
+            throw "Terraform provider version review failed: required_providers block is missing."
+          }
+
+          if (-not $hasProviderVersion) {
+            throw "Terraform provider version review failed: provider version constraints are missing."
+          }
+
+  lint:
+    name: Lint
+    runs-on: windows-latest
+    needs: detect-capabilities
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Skip (frontend not available yet)
+        if: needs.detect-capabilities.outputs.has_frontend != 'true'
+        run: |
+          echo "::notice::Skipping lint: src/frontend is not available yet."
+
+      - name: Skip (lint script not available yet)
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_lint != 'true'
+        run: |
+          echo "::notice::Skipping lint: root package.json script 'lint' is not available yet."
+
+      - name: Setup Node.js
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_lint == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore npm cache
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_lint == 'true' && needs.detect-capabilities.outputs.has_lockfile == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+
+      - name: Install dependencies (lockfile)
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_lint == 'true' && needs.detect-capabilities.outputs.has_lockfile == 'true'
+        run: npm ci
+
+      - name: Install dependencies (no lockfile)
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_lint == 'true' && needs.detect-capabilities.outputs.has_lockfile != 'true'
+        run: npm install
+
+      - name: Run lint
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_lint == 'true'
+        run: npm run lint
+
+  type-check:
+    name: TypeScript Type Check
+    runs-on: windows-latest
+    needs: detect-capabilities
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Skip (frontend not available yet)
+        if: needs.detect-capabilities.outputs.has_frontend != 'true'
+        run: |
+          echo "::notice::Skipping type-check: src/frontend is not available yet."
+
+      - name: Skip (TypeScript configuration not available yet)
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_typecheck != 'true'
+        run: |
+          echo "::notice::Skipping type-check: root tsconfig.json is not available yet."
+
+      - name: Setup Node.js
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_typecheck == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore npm cache
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_typecheck == 'true' && needs.detect-capabilities.outputs.has_lockfile == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+
+      - name: Install dependencies (lockfile)
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_typecheck == 'true' && needs.detect-capabilities.outputs.has_lockfile == 'true'
+        run: npm ci
+
+      - name: Install dependencies (no lockfile)
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_typecheck == 'true' && needs.detect-capabilities.outputs.has_lockfile != 'true'
+        run: npm install
+
+      - name: Run type-check
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_typecheck == 'true'
+        run: npx tsc --noEmit
+
+  test:
+    name: Unit Tests
+    runs-on: windows-latest
+    needs: detect-capabilities
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Skip (frontend not available yet)
+        if: needs.detect-capabilities.outputs.has_frontend != 'true'
+        run: |
+          echo "::notice::Skipping tests: src/frontend is not available yet."
+
+      - name: Skip (test script not available yet)
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_test != 'true'
+        run: |
+          echo "::notice::Skipping tests: root package.json script 'test' is not available yet."
+
+      - name: Setup Node.js
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_test == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore npm cache
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_test == 'true' && needs.detect-capabilities.outputs.has_lockfile == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+
+      - name: Install dependencies (lockfile)
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_test == 'true' && needs.detect-capabilities.outputs.has_lockfile == 'true'
+        run: npm ci
+
+      - name: Install dependencies (no lockfile)
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_test == 'true' && needs.detect-capabilities.outputs.has_lockfile != 'true'
+        run: npm install
+
+      - name: Run tests
+        if: needs.detect-capabilities.outputs.has_frontend == 'true' && needs.detect-capabilities.outputs.has_test == 'true'
+        run: npm test -- --passWithNoTests
+
+  e2e-tests:
+    name: E2E Tests (Playwright)
+    runs-on: windows-latest
+    needs: detect-capabilities
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Skip (e2e not available yet)
+        if: needs.detect-capabilities.outputs.has_e2e != 'true'
+        run: |
+          echo "::notice::Skipping e2e tests: playwright.config.ts and/or tests/e2e are not available yet."
+
+      - name: Setup Node.js
+        if: needs.detect-capabilities.outputs.has_e2e == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore npm cache
+        if: needs.detect-capabilities.outputs.has_e2e == 'true' && needs.detect-capabilities.outputs.has_lockfile == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+
+      - name: Install dependencies (lockfile)
+        if: needs.detect-capabilities.outputs.has_e2e == 'true' && needs.detect-capabilities.outputs.has_lockfile == 'true'
+        run: npm ci
+
+      - name: Install dependencies (no lockfile)
+        if: needs.detect-capabilities.outputs.has_e2e == 'true' && needs.detect-capabilities.outputs.has_lockfile != 'true'
+        run: npm install
+
+      - name: Install Playwright browser
+        if: needs.detect-capabilities.outputs.has_e2e == 'true'
+        run: npx playwright install chromium
+
+      - name: Run e2e tests
+        if: needs.detect-capabilities.outputs.has_e2e == 'true'
+        run: npx playwright test
+
+  terraform-validate:
+    name: Terraform Validate
+    runs-on: windows-latest
+    needs: detect-capabilities
+    timeout-minutes: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Skip (IaC not available yet)
+        if: needs.detect-capabilities.outputs.has_terraform != 'true'
+        run: |
+          echo "::notice::Skipping Terraform validation: infra/terraform with .tf files is not available yet."
+
+      - name: Setup Terraform
+        if: needs.detect-capabilities.outputs.has_terraform == 'true'
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init (no backend)
+        if: needs.detect-capabilities.outputs.has_terraform == 'true'
+        working-directory: ./infra/terraform
+        run: terraform init -backend=false
+
+      - name: Terraform Format Check
+        if: needs.detect-capabilities.outputs.has_terraform == 'true'
+        working-directory: ./infra/terraform
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        if: needs.detect-capabilities.outputs.has_terraform == 'true'
+        working-directory: ./infra/terraform
+        run: terraform validate
+
+        

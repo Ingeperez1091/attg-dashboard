@@ -1,0 +1,361 @@
+openapi: 3.0.3
+info:
+  title: Numerator Filter Configuration API
+  version: 0.2.0
+  description: >
+    Contract for viewing and replacing numerator filter rules by application,
+    with model-driven field discovery, type-aware operator validation, and
+    role/assignment enforcement.
+paths:
+  /api/applications/{appId}/numeratormodel:
+    parameters:
+      - $ref: '#/components/parameters/AppIdParam'
+    get:
+      summary: Get application model field definitions
+      operationId: getApplicationModel
+      tags:
+        - application-model
+      description: >
+        Returns the field metadata for the specified application. Used by the
+        filter configuration UI to discover filterable fields and their types.
+      responses:
+        '200':
+          description: Model fields returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetModelResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated but not assigned to this application
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Application not found or inactive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected retrieval failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/filters/numerator/{appId}:
+    parameters:
+      - $ref: '#/components/parameters/AppIdParam'
+    get:
+      summary: Get numerator filter rules for an application
+      operationId: getNumeratorFilters
+      tags:
+        - numerator-filter-config
+      responses:
+        '200':
+          description: Active rules returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetRulesResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated but not allowed to view this application
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Application not found or inactive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected retrieval failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Soft-replace numerator filter rules for an application
+      operationId: putNumeratorFilters
+      tags:
+        - numerator-filter-config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutRulesRequest'
+      responses:
+        '200':
+          description: Rules soft-replaced successfully (previous active rows marked inactive)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutRulesResponse'
+        '400':
+          description: Validation error; previous rules remain unchanged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated but not allowed to edit this application
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Application not found or inactive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Concurrent update conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected update failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  parameters:
+    AppIdParam:
+      name: appId
+      in: path
+      required: true
+      description: Target application identifier.
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    # ── Application Model ──────────────────────────────────────────────
+    GetModelResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - applicationId
+        - applicationName
+        - fields
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        applicationName:
+          type: string
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelField'
+    ModelField:
+      type: object
+      additionalProperties: false
+      required:
+        - applicationModelFieldId
+        - fieldName
+        - fieldType
+        - isFilterable
+        - isMetricDimension
+        - displayOrder
+      properties:
+        applicationModelFieldId:
+          type: string
+          format: uuid
+          description: Unique identifier of this field definition.
+        fieldName:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Logical field name as it appears in the JSON payload.
+        fieldType:
+          type: string
+          enum:
+            - text
+            - numeric
+            - boolean
+            - date
+          description: Data type category.
+        sourcePath:
+          type: string
+          maxLength: 512
+          nullable: true
+          description: JSONPath or dot-path within the raw payload.
+        isFilterable:
+          type: boolean
+          description: Whether this field can be used in filter rules.
+        isMetricDimension:
+          type: boolean
+          description: Whether this field is used as a grouping/dimension key.
+        displayOrder:
+          type: integer
+          minimum: 0
+          description: Presentation order in the filter configuration UI.
+        allowedOperators:
+          type: array
+          items:
+            type: string
+          description: >
+            Operators valid for this field's type. Computed server-side from
+            fieldType (not stored). Provided as a convenience for UI consumers.
+    # ── Numerator Filter Rules ─────────────────────────────────────────
+    PutRulesRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - rules
+      properties:
+        rules:
+          type: array
+          description: Ordered ruleset for this application. Empty array is a valid explicit clear operation.
+          items:
+            $ref: '#/components/schemas/RuleExpression'
+    RuleExpression:
+      type: object
+      additionalProperties: false
+      required:
+        - applicationModelFieldId
+        - operator
+        - value
+      properties:
+        applicationModelFieldId:
+          type: string
+          format: uuid
+          description: Reference to the ApplicationModelFields field definition.
+        operator:
+          type: string
+          enum:
+            - EQUALS
+            - NOT_EQUALS
+            - CONTAINS
+            - NOT_CONTAINS
+            - IN_LIST
+            - NOT_IN_LIST
+            - GREATER_THAN
+            - GREATER_OR_EQUAL
+            - LESS_THAN
+            - LESS_OR_EQUAL
+          description: >
+            Must be valid for the referenced field's type. Server validates
+            operator-type compatibility.
+        value:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: Comparison value or delimited values for list operators.
+    RuleResponseItem:
+      type: object
+      additionalProperties: false
+      required:
+        - ruleId
+        - applicationModelFieldId
+        - fieldName
+        - fieldType
+        - operator
+        - value
+        - ruleOrder
+      properties:
+        ruleId:
+          type: string
+          format: uuid
+        applicationModelFieldId:
+          type: string
+          format: uuid
+        fieldName:
+          type: string
+          description: Resolved from ApplicationModelFields join.
+        fieldType:
+          type: string
+          enum:
+            - text
+            - numeric
+            - boolean
+            - date
+          description: Resolved from ApplicationModelFields join.
+        operator:
+          type: string
+        value:
+          type: string
+        ruleOrder:
+          type: integer
+          minimum: 1
+        createdBy:
+          type: string
+          nullable: true
+          description: User identifier that created the active rule row.
+        updatedBy:
+          type: string
+          nullable: true
+          description: User identifier that last updated the active rule row.
+    GetRulesResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - applicationId
+        - applicationName
+        - rules
+        - lastUpdatedAt
+        - lastUpdatedBy
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        applicationName:
+          type: string
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleResponseItem'
+        lastUpdatedAt:
+          type: string
+          format: date-time
+        lastUpdatedBy:
+          type: string
+    PutRulesResponse:
+      $ref: '#/components/schemas/GetRulesResponse'
+    # ── Common ─────────────────────────────────────────────────────────
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          examples:
+            - VALIDATION_ERROR
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - NOT_FOUND
+            - CONFLICT
+            - INTERNAL_ERROR
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties:
+            type: string

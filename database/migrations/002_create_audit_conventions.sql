@@ -1,0 +1,11 @@
+SET NOCOUNT ON;
+
+IF OBJECT_ID('app.fn_utc_now', 'FN') IS NULL
+BEGIN
+    EXEC('CREATE FUNCTION app.fn_utc_now() RETURNS DATETIME2 AS BEGIN RETURN SYSUTCDATETIME(); END;');
+END;
+
+IF OBJECT_ID('app.df_created_by', 'D') IS NULL
+BEGIN
+    EXEC('CREATE DEFAULT app.df_created_by AS SUSER_SNAME();');
+END;
