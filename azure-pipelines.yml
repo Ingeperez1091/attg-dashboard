@@ -12,7 +12,7 @@ trigger:
 variables:
   vmImage: ubuntu-latest
   nodeVersion: 24.x
-  azureServiceConnection: b2c43444-2391-4e2b-9ce2-fe54b8ebd50f
+  azureServiceConnection: 8287475a-4f2f-4710-91f6-3c9f9fb6f19e
   webAppName: att-dashboard
   artifactName: webapp-package
 
