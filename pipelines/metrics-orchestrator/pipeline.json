@@ -1,0 +1,95 @@
+{
+  "name": "PL_MetricsOrchestrator",
+  "properties": {
+    "description": "Skeleton ADF orchestrator pipeline that iterates active applications and invokes PL_MetricsProcessing.",
+    "parameters": {
+      "triggerSource": {
+        "type": "String",
+        "defaultValue": "ADF"
+      },
+      "actorUserId": {
+        "type": "String",
+        "defaultValue": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "activities": [
+      {
+        "name": "LookupActiveApplications",
+        "type": "Lookup",
+        "typeProperties": {
+          "source": {
+            "type": "SqlSource",
+            "sqlReaderQuery": "SELECT ApplicationId FROM app.Applications WHERE IsActive = 1 ORDER BY ApplicationName"
+          },
+          "firstRowOnly": false
+        },
+        "policy": {
+          "timeout": "00:05:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 15
+        }
+      },
+      {
+        "name": "ForEachApplication",
+        "type": "ForEach",
+        "dependsOn": [
+          {
+            "activity": "LookupActiveApplications",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "isSequential": false,
+          "batchCount": 5,
+          "items": {
+            "value": "@activity('LookupActiveApplications').output.value",
+            "type": "Expression"
+          },
+          "activities": [
+            {
+              "name": "RunMetricsProcessingForApplication",
+              "type": "ExecutePipeline",
+              "typeProperties": {
+                "pipeline": {
+                  "referenceName": "PL_MetricsProcessing",
+                  "type": "PipelineReference"
+                },
+                "waitOnCompletion": true,
+                "parameters": {
+                  "applicationId": {
+                    "value": "@item().ApplicationId",
+                    "type": "Expression"
+                  },
+                  "runId": {
+                    "value": "@guid()",
+                    "type": "Expression"
+                  },
+                  "triggerSource": {
+                    "value": "@pipeline().parameters.triggerSource",
+                    "type": "Expression"
+                  },
+                  "actorUserId": {
+                    "value": "@pipeline().parameters.actorUserId",
+                    "type": "Expression"
+                  }
+                }
+              },
+              "policy": {
+                "timeout": "01:00:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "annotations": [
+      "metrics-orchestrator",
+      "foreach-applications",
+      "architecture-aligned-skeleton"
+    ]
+  }
+}

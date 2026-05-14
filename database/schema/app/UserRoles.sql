@@ -1,0 +1,18 @@
+IF OBJECT_ID('app.UserRoles', 'U') IS NULL
+BEGIN
+    CREATE TABLE app.UserRoles
+    (
+        UserRoleId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_UserRoles PRIMARY KEY,
+        UserId UNIQUEIDENTIFIER NOT NULL,
+        RoleId UNIQUEIDENTIFIER NOT NULL,
+        AssignedDate DATETIME2 NOT NULL CONSTRAINT DF_UserRoles_AssignedDate DEFAULT (SYSUTCDATETIME()),
+        AssignedBy NVARCHAR(255) NOT NULL,
+        CreateDate DATETIME2 NOT NULL CONSTRAINT DF_UserRoles_CreateDate DEFAULT (SYSUTCDATETIME()),
+        CreatedBy NVARCHAR(255) NOT NULL CONSTRAINT DF_UserRoles_CreatedBy DEFAULT (SUSER_SNAME()),
+        UpdateDate DATETIME2 NOT NULL CONSTRAINT DF_UserRoles_UpdateDate DEFAULT (SYSUTCDATETIME()),
+        UpdatedBy NVARCHAR(255) NOT NULL CONSTRAINT DF_UserRoles_UpdatedBy DEFAULT (SUSER_SNAME()),
+        CONSTRAINT FK_UserRoles_Users FOREIGN KEY (UserId) REFERENCES app.Users(UserId),
+        CONSTRAINT FK_UserRoles_Roles FOREIGN KEY (RoleId) REFERENCES app.Roles(RoleId),
+        CONSTRAINT UQ_UserRoles_UserId UNIQUE (UserId)
+    );
+END;
