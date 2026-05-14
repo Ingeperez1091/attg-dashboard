@@ -1,0 +1,109 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+
+variables:
+  vmImage: ubuntu-latest
+  nodeVersion: 24.x
+  azureServiceConnection: b2c43444-2391-4e2b-9ce2-fe54b8ebd50f
+  webAppName: att-dashboard
+  artifactName: webapp-package
+
+
+pool:
+  vmImage: ubuntu-latest
+stages:
+  - stage: Build
+    displayName: Build web app package
+    jobs:
+      - job: BuildAndPackage
+        displayName: Install, build, and package
+        pool:
+          vmImage: $(vmImage)
+        steps:
+          - checkout: self
+            clean: true
+
+          - task: UseNode@1
+            displayName: Use Node.js $(nodeVersion)
+            inputs:
+              version: $(nodeVersion)
+
+          - task: Cache@2
+            displayName: Cache npm
+            inputs:
+              key: 'npm | "$(Agent.OS)" | package-lock.json'
+              restoreKeys: |
+                npm | "$(Agent.OS)"
+              path: $(Pipeline.Workspace)/.npm
+
+          - script: npm ci
+            displayName: Install dependencies
+            env:
+              npm_config_cache: $(Pipeline.Workspace)/.npm
+
+          - script: npm run build
+            displayName: Build Next.js app
+            env:
+              NODE_ENV: production
+
+          - bash: |
+              set -euo pipefail
+              mkdir -p "$(Build.ArtifactStagingDirectory)/package"
+              cp -R src/frontend/.next/standalone/* "$(Build.ArtifactStagingDirectory)/package/"
+
+              mkdir -p "$(Build.ArtifactStagingDirectory)/package/src/frontend/.next"
+              cp -R src/frontend/.next/static "$(Build.ArtifactStagingDirectory)/package/src/frontend/.next/static"
+
+              if [ -d "src/frontend/public" ]; then
+                mkdir -p "$(Build.ArtifactStagingDirectory)/package/src/frontend"
+                cp -R src/frontend/public "$(Build.ArtifactStagingDirectory)/package/src/frontend/public"
+              fi
+            displayName: Assemble standalone deployment package
+
+          - task: ArchiveFiles@2
+            displayName: Archive deployment package
+            inputs:
+              rootFolderOrFile: $(Build.ArtifactStagingDirectory)/package
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: $(Build.ArtifactStagingDirectory)/$(artifactName).zip
+              replaceExistingArchive: true
+
+          - publish: $(Build.ArtifactStagingDirectory)/$(artifactName).zip
+            displayName: Publish deployment artifact
+            artifact: $(artifactName)
+
+  - stage: Deploy
+    displayName: Deploy to Azure App Service
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: DeployWebApp
+        displayName: Deploy web app
+        environment: production
+        pool:
+          vmImage: $(vmImage)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  displayName: Download build artifact
+                  artifact: $(artifactName)
+
+                - task: AzureWebApp@1
+                  displayName: Deploy to Azure App Service
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    appType: webAppLinux
+                    appName: $(webAppName)
+                    package: $(Pipeline.Workspace)/$(artifactName)/$(artifactName).zip
+                    startupCommand: node server.js
