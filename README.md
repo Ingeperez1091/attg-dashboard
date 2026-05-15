@@ -15,6 +15,7 @@ ATTG Analytics Dashboard is a Next.js + TypeScript application for tracking EY a
 - [npm Scripts](#npm-scripts)
 - [Testing](#testing)
 - [CI Pipeline](#ci-pipeline)
+- [Deployment Helpers](#deployment-helpers)
 - [Contributing](#contributing)
 
 ## What This Project Does
@@ -68,7 +69,8 @@ attganalyticsdashboard/
 │   └── StakeholderDocuments/        # PRD and business context
 ├── scripts/
 │   ├── ci/                          # Local CI validation scripts
-│   └── database/                    # PowerShell migration and rollback runners
+│   ├── database/                    # PowerShell migration and rollback runners
+│   └── iis/                         # IIS deployment docs and helper scripts
 ├── specs/                           # Spec-kit feature specs and implementation plans
 │   ├── 001-database-foundation/
 │   ├── 002-baseline-ci-pipeline/
@@ -303,6 +305,9 @@ Get-Service -Name 'SQLBrowser' | Select-Object Name, Status
 | `test` | `vitest run` | Run all contract and integration tests once |
 | `test:watch` | `vitest` | Watch mode |
 | `test:coverage` | `vitest run --coverage` | Tests with V8 coverage report |
+| `e2e` | `npx playwright test` | Run Playwright end-to-end tests (auto-starts app on port 3001) |
+| `e2e:headed` | `npx playwright test --headed` | Run Playwright tests with visible browser |
+| `e2e:ui` | `npx playwright test --ui` | Open Playwright interactive UI runner |
 
 ## Testing
 
@@ -312,6 +317,7 @@ Tests are organised by layer under `tests/`:
 |-------|----------|---------|
 | Contract | `tests/contract/` | Verify API route response shapes against spec |
 | Integration | `tests/integration/` | Workflow-level tests across routes and repositories |
+| End-to-end (Playwright) | `tests/e2e/` | Validate user journeys in a real browser against the running app |
 
 Test suites currently active (Vitest):
 
@@ -321,6 +327,22 @@ Test suites currently active (Vitest):
 - `integration/user-administration`
 - `integration/numerator-ingestion`
 - `integration/filters/numerator-filter-config`
+
+Test suites currently active (Playwright e2e):
+
+- `e2e/pages/app-pages`
+- `e2e/dashboard/dashboard-grouping`
+- `e2e/dashboard/dashboard-filter-status-usability`
+
+## Deployment Helpers
+
+IIS deployment helper docs and scripts are located in `scripts/iis`:
+
+- [scripts/iis/README_IIS_DEPLOYMENT.md](scripts/iis/README_IIS_DEPLOYMENT.md)
+- [scripts/iis/IIS_DEPLOYMENT_GUIDE.md](scripts/iis/IIS_DEPLOYMENT_GUIDE.md)
+- [scripts/iis/deploy-to-iis.ps1](scripts/iis/deploy-to-iis.ps1)
+- [scripts/iis/test-local-server.bat](scripts/iis/test-local-server.bat)
+- [scripts/iis/test-local-server.sh](scripts/iis/test-local-server.sh)
 
 **Repository mode in tests:** Set `USE_INMEMORY_REPOSITORY=true` (the default in test setup) to run all suites without a live SQL database. SQL-backed suites can be enabled by pointing `SQL_*` env vars at a real database.
 
@@ -335,6 +357,15 @@ npm run test:watch
 
 # Coverage report
 npm run test:coverage
+
+# Playwright e2e (headless)
+npx playwright test
+
+# Playwright e2e (headed)
+npx playwright test --headed
+
+# Playwright UI mode
+npx playwright test --ui
 ```
 
 ## CI Pipeline

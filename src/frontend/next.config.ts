@@ -5,6 +5,7 @@ const repoRoot = path.resolve(__dirname, "../../");
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: repoRoot,
+  output: "standalone",
   allowedDevOrigins: [
     "127.0.0.1",
     "localhost"

@@ -32,6 +32,13 @@ async function fetchDashboardUsage(subServiceLine?: string): Promise<DashboardUs
     method: "GET",
     cache: "no-store"
   });
+
+  if (response.status === 401) {
+    const returnUrl = `${window.location.pathname}${window.location.search}`;
+    window.location.href = `/login?returnUrl=${encodeURIComponent(returnUrl)}`;
+    throw new Error("UNAUTHORIZED");
+  }
+
   const body = await response.json();
 
   if (!response.ok && body?.state?.state) {
