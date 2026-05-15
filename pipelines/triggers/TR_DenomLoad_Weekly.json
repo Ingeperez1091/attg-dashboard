@@ -1,0 +1,44 @@
+{
+  "name": "TR_DenomLoad_Weekly",
+  "properties": {
+    "description": "Weekly schedule trigger for PL_DenomLoad_Weekly.",
+    "annotations": [
+      "weekly",
+      "denominator-load",
+      "architecture-aligned-skeleton"
+    ],
+    "runtimeState": "Stopped",
+    "pipelines": [
+      {
+        "pipelineReference": {
+          "referenceName": "PL_DenomLoad_Weekly",
+          "type": "PipelineReference"
+        },
+        "parameters": {
+          "sourceMode": "ExternalSql",
+          "triggerSource": "ADF"
+        }
+      }
+    ],
+    "type": "ScheduleTrigger",
+    "typeProperties": {
+      "recurrence": {
+        "frequency": "Week",
+        "interval": 1,
+        "startTime": "2026-01-01T01:00:00Z",
+        "timeZone": "UTC",
+        "schedule": {
+          "weekDays": [
+            "Sunday"
+          ],
+          "hours": [
+            1
+          ],
+          "minutes": [
+            0
+          ]
+        }
+      }
+    }
+  }
+}

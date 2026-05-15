@@ -1,0 +1,113 @@
+openapi: 3.0.3
+info:
+  title: Numerator Ingestion API
+  version: 0.1.0
+  description: Contract for the MVP numerator staging endpoint. This endpoint stages raw payloads only; validation/filtering/calculation happen asynchronously downstream.
+paths:
+  /api/numerator:
+    post:
+      summary: Submit numerator data for staging
+      operationId: submitNumerator
+      tags:
+        - numerator-ingestion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitNumeratorRequest'
+      responses:
+        '201':
+          description: Numerator payload accepted and staged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitNumeratorResponse'
+        '400':
+          description: Invalid or malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated but not permitted to submit for the target application
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected ingestion failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    SubmitNumeratorRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - applicationId
+        - payload
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+          description: Active in-scope application identifier.
+        payload:
+          description: Opaque numerator content to be staged without business-rule transformation.
+          oneOf:
+            - type: object
+            - type: array
+    SubmitNumeratorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - ingestionId
+        - applicationId
+        - submittedAt
+        - status
+      properties:
+        ingestionId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        submittedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - staged
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Stable machine-readable error code.
+          examples:
+            - VALIDATION_ERROR
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - INVALID_APPLICATION
+            - INTERNAL_ERROR
+        message:
+          type: string
+          description: Human-readable summary suitable for user-facing error handling.
+        details:
+          type: object
+          description: Optional field-level validation details for malformed requests.
+          additionalProperties:
+            type: string

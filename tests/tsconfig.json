@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "types": ["node", "vitest"],
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../src/frontend/*"]
+    }
+  },
+  "include": [
+    "contract/**/*.ts",
+    "integration/**/*.ts",
+    "unit/**/*.ts"
+  ]
+}

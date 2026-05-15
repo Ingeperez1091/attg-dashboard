@@ -1,0 +1,450 @@
+openapi: 3.0.3
+info:
+  title: Denominator Rules Configuration API
+  version: 0.1.0
+  description: >
+    Contract for viewing, previewing, and replacing denominator rules, plus
+    application-scoped adoption settings.
+paths:
+  /api/denomindator-model:
+    get:
+      summary: Get shared denominator model fields
+      operationId: getDenominatorModel
+      tags: [denominator-model]
+      responses:
+        '200':
+          description: Shared denominator model fields returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetDenominatorModelResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/filters/denominator/{appId}:
+    parameters:
+      - $ref: '#/components/parameters/AppIdParam'
+    get:
+      summary: Get denominator rules for an application
+      operationId: getDenominatorRules
+      tags: [denominator-rules]
+      responses:
+        '200':
+          description: Active denominator rules returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetRulesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      summary: Replace denominator rules for an application
+      operationId: putDenominatorRules
+      tags: [denominator-rules]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutRulesRequest'
+      responses:
+        '200':
+          description: Rules updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutRulesResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Concurrent update conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/filters/denominator/{appId}/preview:
+    parameters:
+      - $ref: '#/components/parameters/AppIdParam'
+    post:
+      summary: Preview denominator impact for proposed rules
+      operationId: previewDenominatorRules
+      tags: [denominator-rules]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewRequest'
+      responses:
+        '200':
+          description: Preview impact returned without persistence
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/filters/denominator/{appId}/settings:
+    parameters:
+      - $ref: '#/components/parameters/AppIdParam'
+    get:
+      summary: Get adoption settings for an application
+      operationId: getAdoptionSettings
+      tags: [adoption-settings]
+      responses:
+        '200':
+          description: Adoption settings returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdoptionSettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      summary: Update adoption settings for an application
+      operationId: putAdoptionSettings
+      tags: [adoption-settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdoptionSettingsUpdateRequest'
+      responses:
+        '200':
+          description: Adoption settings updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdoptionSettings'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  parameters:
+    AppIdParam:
+      name: appId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Caller lacks permission for target application
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Application not found or inaccessible
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Unexpected server failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    GetDenominatorModelResponse:
+      type: object
+      additionalProperties: false
+      required: [fields]
+      properties:
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/DenominatorModelField'
+
+    DenominatorModelField:
+      type: object
+      additionalProperties: false
+      required:
+        - denominatorModelId
+        - fieldName
+        - fieldType
+        - sourceColumn
+        - isFilterable
+        - displayOrder
+        - isActive
+      properties:
+        denominatorModelId:
+          type: string
+          format: uuid
+        fieldName:
+          type: string
+        fieldType:
+          type: string
+          enum: [text, numeric, date]
+        sourceColumn:
+          type: string
+        isFilterable:
+          type: boolean
+        displayOrder:
+          type: integer
+          minimum: 1
+        isActive:
+          type: boolean
+
+    PutRulesRequest:
+      type: object
+      additionalProperties: false
+      required: [rules]
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleExpression'
+
+    RuleExpression:
+      type: object
+      additionalProperties: false
+      required: [denominatorModelId, operator, value]
+      properties:
+        denominatorModelId:
+          type: string
+          format: uuid
+        operator:
+          type: string
+          enum:
+            - EQUALS
+            - NOT_EQUALS
+            - CONTAINS
+            - NOT_CONTAINS
+            - IN_LIST
+            - NOT_IN_LIST
+            - GREATER_THAN
+            - GREATER_OR_EQUAL
+            - LESS_THAN
+            - LESS_OR_EQUAL
+        value:
+          type: string
+          minLength: 1
+          maxLength: 512
+
+    GetRulesResponse:
+      type: object
+      additionalProperties: false
+      required: [applicationId, rules]
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleResponseItem'
+        lastUpdatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastUpdatedBy:
+          type: string
+          nullable: true
+
+    PutRulesResponse:
+      type: object
+      additionalProperties: false
+      required: [applicationId, rules, updatedAt]
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleResponseItem'
+        updatedAt:
+          type: string
+          format: date-time
+
+    RuleResponseItem:
+      type: object
+      additionalProperties: false
+      required:
+        - ruleId
+        - denominatorModelId
+        - fieldName
+        - fieldType
+        - operator
+        - value
+        - ruleOrder
+      properties:
+        ruleId:
+          type: string
+          format: uuid
+        denominatorModelId:
+          type: string
+          format: uuid
+        fieldName:
+          type: string
+        fieldType:
+          type: string
+          enum: [text, numeric, date]
+        operator:
+          type: string
+        value:
+          type: string
+        ruleOrder:
+          type: integer
+          minimum: 1
+
+    PreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [rules]
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleExpression'
+
+    PreviewResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - applicationId
+        - current
+        - projected
+        - delta
+        - calculatedAtUtc
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        current:
+          $ref: '#/components/schemas/ImpactSnapshot'
+        projected:
+          $ref: '#/components/schemas/ImpactSnapshot'
+        delta:
+          $ref: '#/components/schemas/ImpactDelta'
+        calculatedAtUtc:
+          type: string
+          format: date-time
+
+    ImpactSnapshot:
+      type: object
+      additionalProperties: false
+      required: [count, revenue]
+      properties:
+        count:
+          type: integer
+          minimum: 0
+        revenue:
+          type: number
+          format: double
+          minimum: 0
+
+    ImpactDelta:
+      type: object
+      additionalProperties: false
+      required: [count, revenue]
+      properties:
+        count:
+          type: integer
+        revenue:
+          type: number
+          format: double
+
+    AdoptionSettings:
+      type: object
+      additionalProperties: false
+      required: [applicationId, adoptionLevel, revenueMetric, numeratorSource]
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        adoptionLevel:
+          type: string
+          enum: [engagement, client]
+        revenueMetric:
+          type: string
+        numeratorSource:
+          type: string
+          enum: [API, Manual]
+
+    AdoptionSettingsUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [adoptionLevel, revenueMetric, numeratorSource]
+      properties:
+        adoptionLevel:
+          type: string
+          enum: [engagement, client]
+        revenueMetric:
+          type: string
+        numeratorSource:
+          type: string
+          enum: [API, Manual]
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
