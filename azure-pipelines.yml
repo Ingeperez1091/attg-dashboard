@@ -34,9 +34,11 @@ stages:
 
           - script: npm install
             displayName: Install dependencies
+            workingDirectory: $(Build.SourcesDirectory)
 
           - script: npm run build
             displayName: Build frontend
+            workingDirectory: $(Build.SourcesDirectory)
 
           - script: |
               set -euo pipefail
@@ -54,6 +56,7 @@ stages:
                 cp -R src/frontend/public "$APP_DIR/public"
               fi
             displayName: Prepare deployable package
+            workingDirectory: $(Build.SourcesDirectory)
 
           - task: ArchiveFiles@2
             displayName: Archive package
