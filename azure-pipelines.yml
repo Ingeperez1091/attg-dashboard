@@ -8,7 +8,7 @@ pr: none
 variables:
   nodeVersion: "24.x"
   azureServiceConnection: "8287475a-4f2f-4710-91f6-3c9f9fb6f19e"
-  linuxWebAppName: "att-dashboard"
+  linuxWebAppName: "attg-dahsboard-win"
   artifactName: "drop"
 
 stages:
@@ -55,11 +55,6 @@ stages:
             displayName: Use Node.js $(nodeVersion)
             inputs:
               version: $(nodeVersion)
-              
-          # - task: NodeTool@0
-          #   displayName: Use Node.js $(nodeVersion)
-          #   inputs:
-          #     versionSpec: $(nodeVersion)
 
           - script: npm install
             displayName: Install dependencies
@@ -73,18 +68,84 @@ stages:
               set -euo pipefail
 
               APP_DIR="$(Build.ArtifactStagingDirectory)/app"
+              STANDALONE_APP_DIR="src/frontend/.next/standalone/src/frontend"
+              STANDALONE_NODE_MODULES_DIR="src/frontend/.next/standalone/node_modules"
+              STANDALONE_ROOT_DIR="src/frontend/.next/standalone"
+
+              rm -rf "$APP_DIR"
               mkdir -p "$APP_DIR"
 
-              cp -R src/frontend/.next/standalone/src/frontend/* "$APP_DIR/"
-              cp -R src/frontend/.next/standalone/node_modules "$APP_DIR/node_modules"
+              if [ ! -f "$STANDALONE_APP_DIR/server.js" ]; then
+                echo "Standalone build output not found. Run 'npm run build' first."
+                echo "Expected: $STANDALONE_APP_DIR/server.js"
+                exit 1
+              fi
+
+              # Mirror IIS deployment file layout.
+              cp -a "$STANDALONE_APP_DIR/.next" "$APP_DIR/.next"
+              cp -a "$STANDALONE_APP_DIR/server.js" "$APP_DIR/server.js"
+
+              if [ -f "$STANDALONE_APP_DIR/package.json" ]; then
+                cp -a "$STANDALONE_APP_DIR/package.json" "$APP_DIR/package.json"
+              elif [ -f "$STANDALONE_ROOT_DIR/package.json" ]; then
+                cp -a "$STANDALONE_ROOT_DIR/package.json" "$APP_DIR/package.json"
+              else
+                cp -a package.json "$APP_DIR/package.json"
+              fi
+
+              if [ -d "$STANDALONE_NODE_MODULES_DIR" ]; then
+                cp -a "$STANDALONE_NODE_MODULES_DIR" "$APP_DIR/node_modules"
+              fi
 
               mkdir -p "$APP_DIR/.next"
-              cp -R src/frontend/.next/static "$APP_DIR/.next/static"
+              cp -a src/frontend/.next/static "$APP_DIR/.next/static"
 
               if [ -d src/frontend/public ]; then
-                cp -R src/frontend/public "$APP_DIR/public"
+                cp -a src/frontend/public "$APP_DIR/public"
               fi
+
+              if [ -f src/frontend/web.config ]; then
+                cp -a src/frontend/web.config "$APP_DIR/web.config"
+              fi
+
+              # Keep parity with IIS deployment output (without using .env.local in App Service).
+              cp -a "$APP_DIR/server.js" "$APP_DIR/server.cjs"
+              rm -f "$APP_DIR/.env.local"
             displayName: Prepare deployable package
+            workingDirectory: $(repoRoot)
+
+          - script: |
+              set -euo pipefail
+
+              APP_DIR="$(Build.ArtifactStagingDirectory)/app"
+
+              echo "Artifact layout preview (depth <= 3):"
+              find "$APP_DIR" -maxdepth 3 -print | sed "s|^$APP_DIR|.|" | sort
+
+              required_paths=(
+                "$APP_DIR/.next"
+                "$APP_DIR/.next/server"
+                "$APP_DIR/.next/static"
+                "$APP_DIR/node_modules"
+                "$APP_DIR/server.js"
+                "$APP_DIR/server.cjs"
+                "$APP_DIR/package.json"
+              )
+
+              for path in "${required_paths[@]}"; do
+                if [ ! -e "$path" ]; then
+                  echo "Missing required artifact path: $path"
+                  exit 1
+                fi
+              done
+
+              if [ -e "$APP_DIR/.env.local" ]; then
+                echo "Unexpected file present: $APP_DIR/.env.local"
+                exit 1
+              fi
+
+              echo "Artifact verification passed."
+            displayName: Verify artifact layout parity
             workingDirectory: $(repoRoot)
 
           - task: ArchiveFiles@2
@@ -101,12 +162,12 @@ stages:
             artifact: $(artifactName)
 
   - stage: Deploy
-    displayName: Deploy to Azure Web App (Linux)
+    displayName: Deploy to Azure Web App (Windows)
     dependsOn: Build
     jobs:
-      - deployment: DeployLinuxWebApp
-        displayName: Deploy Linux Web App
-        environment: develop-linux
+      - deployment: DeployWindowsWebApp
+        displayName: Deploy Windows Web App
+        environment: develop-windows
         strategy:
           runOnce:
             deploy:
@@ -116,10 +177,10 @@ stages:
                   artifact: $(artifactName)
 
                 - task: AzureWebApp@1
-                  displayName: Deploy to Azure App Service (Linux)
+                  displayName: Deploy to Azure App Service (Windows)
                   inputs:
                     azureSubscription: $(azureServiceConnection)
-                    appType: webAppLinux
-                    appName: $(linuxWebAppName)
+                    appType: webApp
+                    appName: $(windowsWebAppName)
                     package: "$(Pipeline.Workspace)/$(artifactName)/app.zip"
-                    startUpCommand: "node server.js"
+                    startUpCommand: "npm start"
