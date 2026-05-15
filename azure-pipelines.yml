@@ -8,7 +8,7 @@ pr: none
 variables:
   nodeVersion: "24.x"
   azureServiceConnection: "8287475a-4f2f-4710-91f6-3c9f9fb6f19e"
-  linuxWebAppName: "attg-dahsboard-win"
+  windowsWebAppName: "attg-dahsboard-win"
   artifactName: "drop"
 
 stages:
