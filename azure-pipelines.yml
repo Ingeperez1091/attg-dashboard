@@ -22,6 +22,12 @@ stages:
         steps:
           - checkout: self
 
+          - bash: |
+              echo "Build.SourcesDirectory=$(Build.SourcesDirectory)"
+              pwd
+              ls -la
+            displayName: Show checkout location
+
           - task: UseNode@1
             displayName: Use Node.js $(nodeVersion)
             inputs:
