@@ -75,6 +75,7 @@ stages:
               APP_DIR="$(Build.ArtifactStagingDirectory)/app"
               STANDALONE_APP_DIR="src/frontend/.next/standalone/src/frontend"
               STANDALONE_NODE_MODULES_DIR="src/frontend/.next/standalone/node_modules"
+              STANDALONE_ROOT_DIR="src/frontend/.next/standalone"
 
               rm -rf "$APP_DIR"
               mkdir -p "$APP_DIR"
@@ -88,7 +89,14 @@ stages:
               # Mirror IIS deployment file layout.
               cp -a "$STANDALONE_APP_DIR/.next" "$APP_DIR/.next"
               cp -a "$STANDALONE_APP_DIR/server.js" "$APP_DIR/server.js"
-              cp -a "$STANDALONE_APP_DIR/package.json" "$APP_DIR/package.json"
+
+              if [ -f "$STANDALONE_APP_DIR/package.json" ]; then
+                cp -a "$STANDALONE_APP_DIR/package.json" "$APP_DIR/package.json"
+              elif [ -f "$STANDALONE_ROOT_DIR/package.json" ]; then
+                cp -a "$STANDALONE_ROOT_DIR/package.json" "$APP_DIR/package.json"
+              else
+                cp -a package.json "$APP_DIR/package.json"
+              fi
 
               if [ -d "$STANDALONE_NODE_MODULES_DIR" ]; then
                 cp -a "$STANDALONE_NODE_MODULES_DIR" "$APP_DIR/node_modules"
