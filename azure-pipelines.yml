@@ -21,14 +21,35 @@ stages:
           vmImage: ubuntu-latest
         steps:
           - checkout: self
-            clean: true
-            fetchDepth: 1
 
           - bash: |
               echo "Build.SourcesDirectory=$(Build.SourcesDirectory)"
               pwd
               ls -la
             displayName: Show checkout location
+
+          - bash: |
+              set -euo pipefail
+
+              CANDIDATE="$(Build.SourcesDirectory)"
+
+              if [ -f "$CANDIDATE/package.json" ]; then
+                ROOT="$CANDIDATE"
+              elif [ -f "$CANDIDATE/$(Build.Repository.Name)/package.json" ]; then
+                ROOT="$CANDIDATE/$(Build.Repository.Name)"
+              else
+                ROOT="$(find "$CANDIDATE" -maxdepth 4 -type f -name package.json -not -path '*/node_modules/*' | head -n 1 | xargs -r dirname)"
+              fi
+
+              if [ -z "${ROOT:-}" ] || [ ! -f "$ROOT/package.json" ]; then
+                echo "Could not locate package.json under $CANDIDATE"
+                find "$CANDIDATE" -maxdepth 3 -type d | sed -n '1,120p'
+                exit 1
+              fi
+
+              echo "Resolved repo root: $ROOT"
+              echo "##vso[task.setvariable variable=repoRoot]$ROOT"
+            displayName: Resolve repository root
 
           - task: UseNode@1
             displayName: Use Node.js $(nodeVersion)
@@ -42,11 +63,11 @@ stages:
 
           - script: npm install
             displayName: Install dependencies
-            workingDirectory: $(Build.SourcesDirectory)
+            workingDirectory: $(repoRoot)
 
           - script: npm run build
             displayName: Build frontend
-            workingDirectory: $(Build.SourcesDirectory)
+            workingDirectory: $(repoRoot)
 
           - script: |
               set -euo pipefail
@@ -64,7 +85,7 @@ stages:
                 cp -R src/frontend/public "$APP_DIR/public"
               fi
             displayName: Prepare deployable package
-            workingDirectory: $(Build.SourcesDirectory)
+            workingDirectory: $(repoRoot)
 
           - task: ArchiveFiles@2
             displayName: Archive package
