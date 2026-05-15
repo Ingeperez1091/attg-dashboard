@@ -8,7 +8,7 @@ interface LoginPageProps {
 
 function getReturnUrl(rawValue: string | string[] | undefined): string {
   const value = Array.isArray(rawValue) ? rawValue[0] : rawValue;
-  if (!value || !value.startsWith("/")) {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
     return "/";
   }
 

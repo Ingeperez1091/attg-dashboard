@@ -29,7 +29,8 @@ export function validateRuntimeSecurityConfig(
   const bypassExplicitlyEnabled = env.ENABLE_DEV_BYPASS === "true";
   const isBuildTime = process.env.NEXT_PHASE === "phase-production-build";
 
-  console.log("[debug] ENV CHECK", {
+  //Debug logging to verify env vars are loaded as expected (remove in production)
+  /* console.log("[debug] ENV CHECK", {
     NODE_ENV: process.env.NODE_ENV,
     DEV_SESSION_USER_ID: process.env.DEV_SESSION_USER_ID,
     NEXT_PHASE: process.env.NEXT_PHASE,
@@ -38,7 +39,7 @@ export function validateRuntimeSecurityConfig(
     AUTH_MICROSOFT_ENTRA_ID_ID: process.env.AUTH_MICROSOFT_ENTRA_ID_ID,
     AUTH_MICROSOFT_ENTRA_ID_SECRET: process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET,
     AUTH_MICROSOFT_ENTRA_ID_TENANT_ID: process.env.AUTH_MICROSOFT_ENTRA_ID_TENANT_ID,
-  });
+  }); */
 
   // 🚫 Skip enforcement during build
   if (isBuildTime) {

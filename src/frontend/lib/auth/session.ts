@@ -129,24 +129,25 @@ async function resolveFromAuthSession(repositories: RepositoryBundle): Promise<S
     return null;
   }
   const oid = extractSessionOid(authSession);
+  const email = extractSessionEmail(authSession);
 
-  if (!oid) {
-    logSsoDebug("No oid claim found in Auth.js session.");
-    return null;
+  if (oid) {
+    const byOid = await repositories.users.findByAzureAdObjectId(oid);
+    if (byOid) {
+      logSsoDebug("Resolved user by AzureADObjectId.", {
+        userId: byOid.userId,
+        oid: mask(oid)
+      });
+      return resolveFromRepositories(byOid.userId, repositories);
+    }
+  } else {
+    logSsoDebug("No oid claim found in Auth.js session; continuing with email fallback.");
   }
 
-  const byOid = await repositories.users.findByAzureAdObjectId(oid);
-  if (byOid) {
-    logSsoDebug("Resolved user by AzureADObjectId.", {
-      userId: byOid.userId,
+  if (!email) {
+    logSsoDebug("No email claim found in Auth.js session for identity fallback.", {
       oid: mask(oid)
     });
-    return resolveFromRepositories(byOid.userId, repositories);
-  }
-
-  const email = extractSessionEmail(authSession);
-  if (!email) {
-    logSsoDebug("No email claim found in Auth.js session for oid.", { oid: mask(oid) });
     return null;
   }
 
@@ -161,7 +162,7 @@ async function resolveFromAuthSession(repositories: RepositoryBundle): Promise<S
     return null;
   }
 
-  if (byEmail.azureAdObjectId && byEmail.azureAdObjectId !== oid) {
+  if (oid && byEmail.azureAdObjectId && byEmail.azureAdObjectId !== oid) {
     logSsoDebug("Local user has a different AzureADObjectId already bound.", {
       userId: byEmail.userId,
       email: mask(email),
@@ -171,7 +172,7 @@ async function resolveFromAuthSession(repositories: RepositoryBundle): Promise<S
     return null;
   }
 
-  if (!byEmail.azureAdObjectId) {
+  if (oid && !byEmail.azureAdObjectId) {
     logSsoDebug("Attempting first-time AzureADObjectId bind by email.", {
       userId: byEmail.userId,
       email: mask(email),
@@ -194,9 +195,10 @@ async function resolveFromAuthSession(repositories: RepositoryBundle): Promise<S
     }
   }
 
-  logSsoDebug("Resolved user by email fallback after oid processing.", {
+  logSsoDebug("Resolved user by email fallback after identity processing.", {
     userId: byEmail.userId,
-    email: mask(email)
+    email: mask(email),
+    oid: mask(oid)
   });
   return resolveFromRepositories(byEmail.userId, repositories);
 }

@@ -14,9 +14,49 @@ function firstString(...values: unknown[]): string | null {
   return null;
 }
 
+function shouldUseSecureCookies(): boolean {
+  const authUrl = process.env.AUTH_URL?.trim();
+  if (authUrl) {
+    return authUrl.toLowerCase().startsWith("https://");
+  }
+
+  return process.env.NODE_ENV === "production";
+}
+
+const useSecureCookies = shouldUseSecureCookies();
+
+function parseJwtPayload(jwt: string | null | undefined): Record<string, unknown> | null {
+  if (!jwt) {
+    return null;
+  }
+
+  const parts = jwt.split(".");
+  if (parts.length < 2) {
+    return null;
+  }
+
+  const payload = parts[1]
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(Math.ceil(parts[1].length / 4) * 4, "=");
+
+  try {
+    const decoded = Buffer.from(payload, "base64").toString("utf8");
+    const parsed = JSON.parse(decoded);
+    if (parsed && typeof parsed === "object") {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  debug: true,
+  debug: process.env.AUTH_DEBUG_SSO === "true",
   trustHost: true, // 👈 IMPORTANT
+  useSecureCookies,
   providers: [
     MicrosoftEntraID({
       clientId: process.env.AUTH_MICROSOFT_ENTRA_ID_ID!,
@@ -35,26 +75,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: {
     signIn: "/login",
   },
-  cookies: {
-    sessionToken: {
-      name: "next-auth.session-token",
-      options: {
-        httpOnly: true,
-        // In production (Azure App Service with HTTPS): must be true
-        // In development (localhost): false is safe
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-      },
-    },
-  },
   callbacks: {
-    async jwt({ token, profile }) {
+    async jwt({ token, profile, account, user }) {
+      const tokenRecord = token as Record<string, unknown>;
+      const accountRecord = account as Record<string, unknown> | null;
+
       if (profile) {
         const profileRecord = profile as Record<string, unknown>;
-        const oid = firstString(profileRecord.oid);
+        // Entra commonly exposes oid; some flows expose only sub.
+        const oid = firstString(profileRecord.oid, profileRecord.sub);
         if (oid) {
-          token.oid = oid;
+          tokenRecord.oid = oid;
         }
 
         // Some Entra tenants do not emit the "email" claim; use common fallbacks.
@@ -69,6 +100,62 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           if (resolvedEmail) {
             token.email = resolvedEmail.toLowerCase();
           }
+        }
+      }
+
+      // Profile can be absent on some callback paths under IIS/proxy setups.
+      // Fall back to durable token/account claims so session resolution still works.
+      if (typeof tokenRecord.oid !== "string" || !tokenRecord.oid.trim()) {
+        const resolvedOid = firstString(token.sub, account?.providerAccountId);
+        if (resolvedOid) {
+          tokenRecord.oid = resolvedOid;
+        }
+      }
+
+      if (typeof token.email !== "string" || !token.email.trim()) {
+        const resolvedEmail = firstString(
+          user?.email,
+          token.email,
+          tokenRecord.preferred_username,
+          tokenRecord.upn,
+          tokenRecord.unique_name,
+        );
+        if (resolvedEmail) {
+          token.email = resolvedEmail.toLowerCase();
+        }
+      }
+
+      // Some IIS/proxy callback paths do not surface profile claims reliably.
+      // As a final fallback, parse id_token payload claims from the provider account.
+      if (
+        (typeof tokenRecord.oid !== "string" || !tokenRecord.oid.trim()) ||
+        (typeof token.email !== "string" || !token.email.trim())
+      ) {
+        const idToken = firstString(accountRecord?.id_token, tokenRecord.id_token);
+        const idTokenPayload = parseJwtPayload(idToken);
+        if (idTokenPayload) {
+          const payloadOid = firstString(
+            idTokenPayload.oid,
+            idTokenPayload.sub,
+            idTokenPayload.objectid,
+          );
+
+          if ((typeof tokenRecord.oid !== "string" || !tokenRecord.oid.trim()) && payloadOid) {
+            tokenRecord.oid = payloadOid;
+          }
+
+          if (typeof token.email !== "string" || !token.email.trim()) {
+            const payloadEmail = firstString(
+              idTokenPayload.email,
+              idTokenPayload.preferred_username,
+              idTokenPayload.upn,
+              idTokenPayload.unique_name,
+            );
+            if (payloadEmail) {
+              token.email = payloadEmail.toLowerCase();
+            }
+          }
+
         }
       }
 
