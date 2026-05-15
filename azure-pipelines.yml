@@ -21,6 +21,8 @@ stages:
           vmImage: ubuntu-latest
         steps:
           - checkout: self
+            clean: true
+            fetchDepth: 1
 
           - bash: |
               echo "Build.SourcesDirectory=$(Build.SourcesDirectory)"
