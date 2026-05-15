@@ -27,7 +27,7 @@ stages:
             inputs:
               versionSpec: $(nodeVersion)
 
-          - script: npm ci
+          - script: npm install
             displayName: Install dependencies
 
           - script: npm run build
