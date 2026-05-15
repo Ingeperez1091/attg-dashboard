@@ -1,0 +1,88 @@
+{
+  "name": "PL_DenomLoad_Weekly",
+  "properties": {
+    "description": "Skeleton ADF pipeline for weekly denominator ingestion from external Mercury source into local stage.DenominatorSnapshot.",
+    "parameters": {
+      "sourceMode": {
+        "type": "String",
+        "defaultValue": "ExternalSql"
+      },
+      "triggerSource": {
+        "type": "String",
+        "defaultValue": "ADF"
+      }
+    },
+    "activities": [
+      {
+        "name": "CopyDenominatorFromExternalSource",
+        "type": "Copy",
+        "typeProperties": {
+          "source": {
+            "type": "SqlSource",
+            "sqlReaderQuery": "SELECT * FROM [InventoryAnalysis].[dbo].[vw_USTaxBTS_FY26_MaxACD]"
+          },
+          "sink": {
+            "type": "SqlSink",
+            "writeBehavior": "insert"
+          },
+          "enableStaging": false
+        },
+        "policy": {
+          "timeout": "01:00:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 30
+        }
+      },
+      {
+        "name": "RefreshDenominatorLocalProjection",
+        "type": "SqlServerStoredProcedure",
+        "dependsOn": [
+          {
+            "activity": "CopyDenominatorFromExternalSource",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "storedProcedureName": "stage.usp_RefreshDenominatorLocal",
+          "storedProcedureParameters": {}
+        },
+        "policy": {
+          "timeout": "00:20:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 30
+        }
+      },
+      {
+        "name": "ValidateSnapshotHasRows",
+        "type": "Lookup",
+        "dependsOn": [
+          {
+            "activity": "RefreshDenominatorLocalProjection",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "source": {
+            "type": "SqlSource",
+            "sqlReaderQuery": "SELECT COUNT(1) AS SnapshotRowCount FROM stage.DenominatorSnapshot"
+          },
+          "firstRowOnly": true
+        },
+        "policy": {
+          "timeout": "00:05:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30
+        }
+      }
+    ],
+    "annotations": [
+      "denominator-load",
+      "weekly",
+      "architecture-aligned-skeleton"
+    ]
+  }
+}
