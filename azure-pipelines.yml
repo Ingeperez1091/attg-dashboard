@@ -6,10 +6,11 @@ trigger:
 pr: none
 
 variables:
-  nodeVersion: "24.x"
+  nodeVersion: "22.x"
   azureServiceConnection: "8287475a-4f2f-4710-91f6-3c9f9fb6f19e"
-  windowsWebAppName: "attg-dahsboard-win"
-  artifactName: "drop"
+  windowsWebAppName: "attg-metrics-win"
+  windowsWebAppHostname: "attg-metrics-win-arazhxb4cfg8h7aq.westus2-01.azurewebsites.net"
+  artifactName: "metrics-win-app"
   windowsWebAppResourceGroup: "attg-analytics"
 
 stages:
@@ -114,7 +115,21 @@ stages:
               # Prepend IISNode PORT shim to server.cjs.
               {
                 echo "const fs = require('fs');"
+                echo "const startupTraceEnabled = process.env.APP_BOOT_TRACE === 'true';"
+                echo "const startupTraceFile = process.env.APP_BOOT_TRACE_FILE || 'D:\\\\home\\\\LogFiles\\\\app-startup-trace.log';"
+                echo "function writeStartupTrace(message, context) {"
+                echo "  if (!startupTraceEnabled) return;"
+                echo "  const payload = context ? message + ' ' + JSON.stringify(context) : message;"
+                echo "  console.log('[startup-trace] ' + payload);"
+                echo "  try { fs.appendFileSync(startupTraceFile, new Date().toISOString() + ' ' + payload + '\\\\n'); } catch (error) { console.log('[startup-trace] file write failed', String(error)); }"
+                echo "}"
+                echo "if (startupTraceEnabled) {"
+                echo "  writeStartupTrace('boot', { pid: process.pid, port: process.env.PORT, websitesPort: process.env.WEBSITES_PORT, nodeEnv: process.env.NODE_ENV });"
+                echo "  process.on('uncaughtException', (error) => writeStartupTrace('uncaughtException', { message: error?.message, stack: error?.stack }));"
+                echo "  process.on('unhandledRejection', (reason) => writeStartupTrace('unhandledRejection', { reason: String(reason) }));"
+                echo "}"
                 echo "if (process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) {"
+                echo "  writeStartupTrace('named-pipe-port-shim', { originalPort: process.env.PORT, fallbackPort: process.env.WEBSITES_PORT || '8080' });"
                 echo "  process.env.PORT = process.env.WEBSITES_PORT || '8080';"
                 echo "}"
                 cat "$APP_DIR/server.cjs"
@@ -231,7 +246,7 @@ stages:
                     azureResourceGroup: $(windowsWebAppResourceGroup)
                     appSettings: |
                       [
-                        { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~20" },
+                        { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~22" },
                         { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false" },
                         { "name": "NODE_ENV", "value": "production" },
                         { "name": "APP_BOOT_TRACE", "value": "true" },
@@ -258,12 +273,13 @@ stages:
                 - script: |
                     set -euo pipefail
 
-                    APP_URL="https://$(windowsWebAppName).azurewebsites.net/login"
-                    echo "Warming up $APP_URL"
+                    LOGIN_URL="https://$(windowsWebAppHostname)/login"
+                    DASHBOARD_URL="https://$(windowsWebAppHostname)/dashboard"
+                    echo "Warming up $LOGIN_URL"
 
                     for i in $(seq 1 20); do
-                      code=$(curl -sS -o /dev/null -w "%{http_code}" "$APP_URL" || true)
-                      echo "Attempt $i -> HTTP $code"
+                      code=$(curl -sS -o /dev/null -w "%{http_code}" "$LOGIN_URL" || true)
+                      echo "Attempt $i (/login) -> HTTP $code"
                       if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
                         echo "Warmup succeeded"
                         exit 0
@@ -271,7 +287,16 @@ stages:
                       sleep 10
                     done
 
-                    echo "Warmup did not reach HTTP 2xx/3xx within timeout window"
+                    echo "Warmup did not reach HTTP 2xx/3xx within timeout window for /login"
+                    echo "Collecting diagnostics for /login and /dashboard"
+
+                    for url in "$LOGIN_URL" "$DASHBOARD_URL"; do
+                      echo "--- Diagnostics for $url ---"
+                      curl -sS -D - "$url" -o /tmp/probe-body.txt || true
+                      echo "Body preview:"
+                      sed -n '1,40p' /tmp/probe-body.txt || true
+                    done
+
                     exit 1
                   displayName: Post-deploy warmup probe
 
