@@ -98,9 +98,6 @@ stages:
               fi
 
               mkdir -p "$APP_DIR/.next"
-              # .next/static is not included in standalone output; copy from main build.
-              # Do NOT copy .next/server from main build — it would overwrite the correctly
-              # bundled standalone server routes already present in $STANDALONE_APP_DIR/.next.
               cp -a src/frontend/.next/static "$APP_DIR/.next/static"
 
               if [ -d src/frontend/public ]; then
@@ -111,104 +108,20 @@ stages:
                 cp -a src/frontend/web.config "$APP_DIR/web.config"
               fi
 
-              # Keep parity with IIS deployment output (without using .env.local in App Service).
               cp -a "$APP_DIR/server.js" "$APP_DIR/server.cjs"
 
-              # IISNode on Windows App Service injects PORT as a named-pipe path string.
-              # parseInt(namedPipeString) → NaN → Next.js falls back to TCP 3000 instead of the named pipe.
-              # Prepend a shim that replaces the named-pipe value with the real TCP port before
-              # any server code reads it. This is format-agnostic and survives Next.js server.js changes.
+              # Prepend IISNode PORT shim to server.cjs
               {
-                cat <<'EOF'
+                cat <<'SHIM_EOF'
 const fs = require('fs');
-const Module = require('module');
-
-const startupTraceEnabled = process.env.APP_BOOT_TRACE === 'true';
-const startupTraceFile = process.env.APP_BOOT_TRACE_FILE || 'D:\\home\\LogFiles\\app-startup-trace.log';
-
-function writeStartupTrace(message, context) {
-  if (!startupTraceEnabled) {
-    return;
-  }
-
-  const payload = context ? `${message} ${JSON.stringify(context)}` : message;
-  console.log(`[startup-trace] ${payload}`);
-
-  try {
-    fs.appendFileSync(startupTraceFile, `${new Date().toISOString()} ${payload}\n`);
-  } catch (error) {
-    console.log('[startup-trace] failed to write trace file', String(error));
-  }
-}
-
-if (startupTraceEnabled) {
-  writeStartupTrace('boot', {
-    pid: process.pid,
-    cwd: process.cwd(),
-    execPath: process.execPath,
-    argv: process.argv,
-    nodeEnv: process.env.NODE_ENV,
-    port: process.env.PORT,
-    websitesPort: process.env.WEBSITES_PORT,
-    appPath: process.env.APP_PATH,
-    iisnodeVersion: process.env.IISNODE_VERSION,
-  });
-
-  process.on('uncaughtException', (error) => {
-    writeStartupTrace('uncaughtException', { message: error?.message, stack: error?.stack });
-  });
-
-  process.on('unhandledRejection', (reason) => {
-    writeStartupTrace('unhandledRejection', { reason: String(reason) });
-  });
-
-  const originalLoad = Module._load;
-  Module._load = function patchedLoad(request, parent, isMain) {
-    const loaded = originalLoad.apply(this, arguments);
-    if (request === 'next/dist/server/lib/start-server' && loaded && typeof loaded.startServer === 'function') {
-      const originalStartServer = loaded.startServer;
-      loaded.startServer = async function tracedStartServer(...args) {
-        writeStartupTrace('startServer:call', {
-          port: process.env.PORT,
-          websitesPort: process.env.WEBSITES_PORT,
-        });
-
-        try {
-          const result = await originalStartServer.apply(this, args);
-          writeStartupTrace('startServer:success');
-          return result;
-        } catch (error) {
-          writeStartupTrace('startServer:error', {
-            message: error?.message,
-            stack: error?.stack,
-          });
-          throw error;
-        }
-      };
-    }
-
-    return loaded;
-  };
-}
-
-if (startupTraceEnabled && process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) {
-  writeStartupTrace('named-pipe-port-shim', {
-    originalPort: process.env.PORT,
-    fallbackPort: process.env.WEBSITES_PORT || '8080',
-  });
+if (process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) {
   process.env.PORT = process.env.WEBSITES_PORT || '8080';
 }
-
-EOF
-                echo '// IISNode named-pipe port shim -- injected by Azure Pipelines'
-                echo "if (process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) { process.env.PORT = process.env.WEBSITES_PORT || '8080'; }"
+SHIM_EOF
                 cat "$APP_DIR/server.cjs"
               } > "$APP_DIR/server.cjs.tmp" && mv "$APP_DIR/server.cjs.tmp" "$APP_DIR/server.cjs"
-              echo "Prepended IISNode PORT shim to server.cjs"
 
               rm -f "$APP_DIR/.env.local"
-
-              # Create iisnode log directory so iisnode can write stdout/stderr logs immediately.
               mkdir -p "$APP_DIR/iisnode"
             displayName: Prepare deployable package
             workingDirectory: $(repoRoot)
@@ -355,3 +268,4 @@ EOF
                     echo "Warmup did not reach HTTP 2xx/3xx within timeout window"
                     exit 1
                   displayName: Post-deploy warmup probe
+
