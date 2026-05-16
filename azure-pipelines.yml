@@ -6,10 +6,12 @@ trigger:
 pr: none
 
 variables:
-  nodeVersion: "24.x"
+  nodeVersion: "22.x"
   azureServiceConnection: "8287475a-4f2f-4710-91f6-3c9f9fb6f19e"
-  windowsWebAppName: "attg-dahsboard-win"
-  artifactName: "drop"
+  windowsWebAppName: "attg-metrics-win"
+  windowsWebAppHostname: "attg-metrics-win-arazhxb4cfg8h7aq.westus2-01.azurewebsites.net"
+  artifactName: "metrics-win-app"
+  windowsWebAppResourceGroup: "attg-analytics"
 
 stages:
   - stage: Build
@@ -98,9 +100,6 @@ stages:
               fi
 
               mkdir -p "$APP_DIR/.next"
-              # .next/static is not included in standalone output; copy from main build.
-              # Do NOT copy .next/server from main build — it would overwrite the correctly
-              # bundled standalone server routes already present in $STANDALONE_APP_DIR/.next.
               cp -a src/frontend/.next/static "$APP_DIR/.next/static"
 
               if [ -d src/frontend/public ]; then
@@ -111,104 +110,33 @@ stages:
                 cp -a src/frontend/web.config "$APP_DIR/web.config"
               fi
 
-              # Keep parity with IIS deployment output (without using .env.local in App Service).
               cp -a "$APP_DIR/server.js" "$APP_DIR/server.cjs"
 
-              # IISNode on Windows App Service injects PORT as a named-pipe path string.
-              # parseInt(namedPipeString) → NaN → Next.js falls back to TCP 3000 instead of the named pipe.
-              # Prepend a shim that replaces the named-pipe value with the real TCP port before
-              # any server code reads it. This is format-agnostic and survives Next.js server.js changes.
+              # Prepend IISNode PORT shim to server.cjs.
               {
-                cat <<'EOF'
-const fs = require('fs');
-const Module = require('module');
-
-const startupTraceEnabled = process.env.APP_BOOT_TRACE === 'true';
-const startupTraceFile = process.env.APP_BOOT_TRACE_FILE || 'D:\\home\\LogFiles\\app-startup-trace.log';
-
-function writeStartupTrace(message, context) {
-  if (!startupTraceEnabled) {
-    return;
-  }
-
-  const payload = context ? `${message} ${JSON.stringify(context)}` : message;
-  console.log(`[startup-trace] ${payload}`);
-
-  try {
-    fs.appendFileSync(startupTraceFile, `${new Date().toISOString()} ${payload}\n`);
-  } catch (error) {
-    console.log('[startup-trace] failed to write trace file', String(error));
-  }
-}
-
-if (startupTraceEnabled) {
-  writeStartupTrace('boot', {
-    pid: process.pid,
-    cwd: process.cwd(),
-    execPath: process.execPath,
-    argv: process.argv,
-    nodeEnv: process.env.NODE_ENV,
-    port: process.env.PORT,
-    websitesPort: process.env.WEBSITES_PORT,
-    appPath: process.env.APP_PATH,
-    iisnodeVersion: process.env.IISNODE_VERSION,
-  });
-
-  process.on('uncaughtException', (error) => {
-    writeStartupTrace('uncaughtException', { message: error?.message, stack: error?.stack });
-  });
-
-  process.on('unhandledRejection', (reason) => {
-    writeStartupTrace('unhandledRejection', { reason: String(reason) });
-  });
-
-  const originalLoad = Module._load;
-  Module._load = function patchedLoad(request, parent, isMain) {
-    const loaded = originalLoad.apply(this, arguments);
-    if (request === 'next/dist/server/lib/start-server' && loaded && typeof loaded.startServer === 'function') {
-      const originalStartServer = loaded.startServer;
-      loaded.startServer = async function tracedStartServer(...args) {
-        writeStartupTrace('startServer:call', {
-          port: process.env.PORT,
-          websitesPort: process.env.WEBSITES_PORT,
-        });
-
-        try {
-          const result = await originalStartServer.apply(this, args);
-          writeStartupTrace('startServer:success');
-          return result;
-        } catch (error) {
-          writeStartupTrace('startServer:error', {
-            message: error?.message,
-            stack: error?.stack,
-          });
-          throw error;
-        }
-      };
-    }
-
-    return loaded;
-  };
-}
-
-if (startupTraceEnabled && process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) {
-  writeStartupTrace('named-pipe-port-shim', {
-    originalPort: process.env.PORT,
-    fallbackPort: process.env.WEBSITES_PORT || '8080',
-  });
-  process.env.PORT = process.env.WEBSITES_PORT || '8080';
-}
-
-EOF
-                echo '// IISNode named-pipe port shim -- injected by Azure Pipelines'
-                echo "if (process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) { process.env.PORT = process.env.WEBSITES_PORT || '8080'; }"
+                echo "const fs = require('fs');"
+                echo "const startupTraceEnabled = process.env.APP_BOOT_TRACE === 'true';"
+                echo "const startupTraceFile = process.env.APP_BOOT_TRACE_FILE || 'D:\\\\home\\\\LogFiles\\\\app-startup-trace.log';"
+                echo "function writeStartupTrace(message, context) {"
+                echo "  if (!startupTraceEnabled) return;"
+                echo "  const payload = context ? message + ' ' + JSON.stringify(context) : message;"
+                echo "  console.log('[startup-trace] ' + payload);"
+                echo "  try { fs.appendFileSync(startupTraceFile, new Date().toISOString() + ' ' + payload + '\\\\n'); } catch (error) { console.log('[startup-trace] file write failed', String(error)); }"
+                echo "}"
+                echo "if (startupTraceEnabled) {"
+                echo "  writeStartupTrace('boot', { pid: process.pid, port: process.env.PORT, websitesPort: process.env.WEBSITES_PORT, nodeEnv: process.env.NODE_ENV });"
+                echo "  process.on('uncaughtException', (error) => writeStartupTrace('uncaughtException', { message: error?.message, stack: error?.stack }));"
+                echo "  process.on('unhandledRejection', (reason) => writeStartupTrace('unhandledRejection', { reason: String(reason) }));"
+                echo "}"
+                echo "if (process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) {"
+                echo "  writeStartupTrace('named-pipe-port-shim', { originalPort: process.env.PORT, fallbackPort: process.env.WEBSITES_PORT || '8080' });"
+                echo "  process.env.PORT = process.env.WEBSITES_PORT || '8080';"
+                echo "}"
                 cat "$APP_DIR/server.cjs"
-              } > "$APP_DIR/server.cjs.tmp" && mv "$APP_DIR/server.cjs.tmp" "$APP_DIR/server.cjs"
-              echo "Prepended IISNode PORT shim to server.cjs"
+              } > "$APP_DIR/server.cjs.tmp"
+              mv "$APP_DIR/server.cjs.tmp" "$APP_DIR/server.cjs"
 
               rm -f "$APP_DIR/.env.local"
-
-              # Create iisnode log directory so iisnode can write stdout/stderr logs immediately.
               mkdir -p "$APP_DIR/iisnode"
             displayName: Prepare deployable package
             workingDirectory: $(repoRoot)
@@ -245,7 +173,12 @@ EOF
               fi
 
               echo "server.cjs shim check:"
-              grep -n "IISNode named-pipe port shim" "$APP_DIR/server.cjs" | sed -n '1,2p'
+              if grep -n -E "process\.env\.PORT.*isNaN\(parseInt\(process\.env\.PORT, 10\)\)|process\.env\.PORT = process\.env\.WEBSITES_PORT \|\| '8080'" "$APP_DIR/server.cjs" | sed -n '1,2p'; then
+                echo "server.cjs shim marker found"
+              else
+                echo "Missing PORT shim marker in server.cjs"
+                exit 1
+              fi
               echo "server.cjs header preview:"
               sed -n '1,5p' "$APP_DIR/server.cjs"
 
@@ -310,9 +243,10 @@ EOF
                   inputs:
                     azureSubscription: $(azureServiceConnection)
                     appName: $(windowsWebAppName)
+                    azureResourceGroup: $(windowsWebAppResourceGroup)
                     appSettings: |
                       [
-                        { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~20" },
+                        { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~22" },
                         { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false" },
                         { "name": "NODE_ENV", "value": "production" },
                         { "name": "APP_BOOT_TRACE", "value": "true" },
@@ -339,12 +273,13 @@ EOF
                 - script: |
                     set -euo pipefail
 
-                    APP_URL="https://$(windowsWebAppName).azurewebsites.net/login"
-                    echo "Warming up $APP_URL"
+                    LOGIN_URL="https://$(windowsWebAppHostname)/login"
+                    DASHBOARD_URL="https://$(windowsWebAppHostname)/dashboard"
+                    echo "Warming up $LOGIN_URL"
 
                     for i in $(seq 1 20); do
-                      code=$(curl -sS -o /dev/null -w "%{http_code}" "$APP_URL" || true)
-                      echo "Attempt $i -> HTTP $code"
+                      code=$(curl -sS -o /dev/null -w "%{http_code}" "$LOGIN_URL" || true)
+                      echo "Attempt $i (/login) -> HTTP $code"
                       if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
                         echo "Warmup succeeded"
                         exit 0
@@ -352,6 +287,16 @@ EOF
                       sleep 10
                     done
 
-                    echo "Warmup did not reach HTTP 2xx/3xx within timeout window"
+                    echo "Warmup did not reach HTTP 2xx/3xx within timeout window for /login"
+                    echo "Collecting diagnostics for /login and /dashboard"
+
+                    for url in "$LOGIN_URL" "$DASHBOARD_URL"; do
+                      echo "--- Diagnostics for $url ---"
+                      curl -sS -D - "$url" -o /tmp/probe-body.txt || true
+                      echo "Body preview:"
+                      sed -n '1,40p' /tmp/probe-body.txt || true
+                    done
+
                     exit 1
                   displayName: Post-deploy warmup probe
+
