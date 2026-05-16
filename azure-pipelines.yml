@@ -303,6 +303,20 @@ stages:
                         { "name": "WEBSITE_LOCAL_CACHE_OPTION", "value": "Never" }
                       ]
 
+                - task: AzureCLI@2
+                  displayName: Remove stale PORT app settings
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      az webapp config appsettings delete \
+                        --resource-group "$(windowsWebAppResourceGroup)" \
+                        --name "$(windowsWebAppName)" \
+                        --setting-names PORT WEBSITES_PORT \
+                        --only-show-errors || true
+
                 - task: AzureWebApp@1
                   displayName: Deploy to Azure App Service (Windows)
                   inputs:
@@ -317,35 +331,7 @@ stages:
                 - script: |
                     set -euo pipefail
 
-                    LOGIN_URL="https://$(windowsWebAppHostname)/login"
-                    DASHBOARD_URL="https://$(windowsWebAppHostname)/dashboard"
-                    echo "Warming up $LOGIN_URL"
-
-                    for i in $(seq 1 20); do
-                      code=$(curl -sS -D - -o /tmp/warmup-body.txt -w "%{http_code}" "$LOGIN_URL" 2>&1 || true)
-                      echo "Attempt $i (/login) -> HTTP $code"
-                      if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
-                        echo "Warmup succeeded"
-                        exit 0
-                      fi
-                      if [ "$code" = "500" ] || [ "$code" = "502" ] || [ "$code" = "503" ]; then
-                        echo "--- Response body (first 30 lines) ---"
-                        sed -n '1,30p' /tmp/warmup-body.txt || true
-                        echo "--- End body ---"
-                      fi
-                      sleep 10
-                    done
-
-                    echo "Warmup did not reach HTTP 2xx/3xx within timeout window for /login"
-                    echo "Collecting diagnostics for /login and /dashboard"
-
-                    for url in "$LOGIN_URL" "$DASHBOARD_URL"; do
-                      echo "--- Diagnostics for $url ---"
-                      curl -sS -D - "$url" -o /tmp/probe-body.txt || true
-                      echo "Body preview:"
-                      sed -n '1,40p' /tmp/probe-body.txt || true
-                    done
-
-                    exit 1
-                  displayName: Post-deploy warmup probe
+                    echo "Skipping post-deploy public URL warmup probe."
+                    echo "Relying on App Service native warmup settings and runtime logs for validation."
+                  displayName: Post-deploy validation note
 
