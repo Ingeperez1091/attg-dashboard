@@ -6,7 +6,7 @@ trigger:
 pr: none
 
 variables:
-  nodeVersion: "20.x"
+  nodeVersion: "24.x"
   azureServiceConnection: "8287475a-4f2f-4710-91f6-3c9f9fb6f19e"
   windowsWebAppName: "attg-dahsboard-win"
   artifactName: "drop"
@@ -114,11 +114,13 @@ stages:
               # Keep parity with IIS deployment output (without using .env.local in App Service).
               cp -a "$APP_DIR/server.js" "$APP_DIR/server.cjs"
 
-              # IISNode on Windows App Service can provide PORT as a named pipe; avoid parseInt(PORT).
-              if grep -q "parseInt(process.env.PORT, 10)" "$APP_DIR/server.cjs"; then
-                sed -i -E "s/const currentPort = parseInt\(process\.env\.PORT, 10\) \|\| 3000/const currentPort = process.env.PORT || process.env.WEBSITES_PORT || 8080/g" "$APP_DIR/server.cjs"
-                echo "Patched server.cjs for IIS named-pipe PORT binding"
-              fi
+              # IISNode on Windows App Service injects PORT as a named-pipe path string.
+              # parseInt(namedPipeString) → NaN → Next.js falls back to TCP 3000 instead of the named pipe.
+              # Prepend a shim that replaces the named-pipe value with the real TCP port before
+              # any server code reads it. This is format-agnostic and survives Next.js server.js changes.
+              SHIM="// IISNode named-pipe port shim -- injected by Azure Pipelines\nif (process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) { process.env.PORT = process.env.WEBSITES_PORT || '8080'; }\n"
+              printf '%s' "$SHIM" | cat - "$APP_DIR/server.cjs" > "$APP_DIR/server.cjs.tmp" && mv "$APP_DIR/server.cjs.tmp" "$APP_DIR/server.cjs"
+              echo "Prepended IISNode PORT shim to server.cjs"
 
               rm -f "$APP_DIR/.env.local"
 
@@ -158,10 +160,10 @@ stages:
                 exit 1
               fi
 
-              echo "server.cjs port line check:"
-              grep -n "currentPort" "$APP_DIR/server.cjs" | sed -n '1,3p'
+              echo "server.cjs shim check:"
+              grep -n "IISNode named-pipe port shim" "$APP_DIR/server.cjs" | sed -n '1,2p'
               echo "server.cjs header preview:"
-              sed -n '1,20p' "$APP_DIR/server.cjs"
+              sed -n '1,5p' "$APP_DIR/server.cjs"
 
               APP_PATHS_MANIFEST="$APP_DIR/.next/server/app-paths-manifest.json"
               if [ -f "$APP_PATHS_MANIFEST" ]; then
