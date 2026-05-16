@@ -111,14 +111,14 @@ stages:
 
               cp -a "$APP_DIR/server.js" "$APP_DIR/server.cjs"
 
-              # Prepend IISNode PORT shim to server.cjs
-              cat > "$APP_DIR/server.cjs.tmp" << 'SHIM_EOF'
-              const fs = require('fs');
-              if (process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) {
-                process.env.PORT = process.env.WEBSITES_PORT || '8080';
-              }
-              SHIM_EOF
-              cat "$APP_DIR/server.cjs" >> "$APP_DIR/server.cjs.tmp"
+              # Prepend IISNode PORT shim to server.cjs.
+              {
+                echo "const fs = require('fs');"
+                echo "if (process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) {"
+                echo "  process.env.PORT = process.env.WEBSITES_PORT || '8080';"
+                echo "}"
+                cat "$APP_DIR/server.cjs"
+              } > "$APP_DIR/server.cjs.tmp"
               mv "$APP_DIR/server.cjs.tmp" "$APP_DIR/server.cjs"
 
               rm -f "$APP_DIR/.env.local"
@@ -158,7 +158,12 @@ stages:
               fi
 
               echo "server.cjs shim check:"
-              grep -n "IISNode named-pipe port shim" "$APP_DIR/server.cjs" | sed -n '1,2p'
+              if grep -n -E "process\.env\.PORT.*isNaN\(parseInt\(process\.env\.PORT, 10\)\)|process\.env\.PORT = process\.env\.WEBSITES_PORT \|\| '8080'" "$APP_DIR/server.cjs" | sed -n '1,2p'; then
+                echo "server.cjs shim marker found"
+              else
+                echo "Missing PORT shim marker in server.cjs"
+                exit 1
+              fi
               echo "server.cjs header preview:"
               sed -n '1,5p' "$APP_DIR/server.cjs"
 
