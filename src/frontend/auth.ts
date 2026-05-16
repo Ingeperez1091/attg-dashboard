@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import { validateRuntimeSecurityConfig } from "@/lib/security/runtime-security";
+import { appBootTrace } from "@/lib/runtime-trace";
 
 validateRuntimeSecurityConfig();
 
@@ -175,9 +176,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return session;
     },
 
-    async redirect({ baseUrl }) {
-      // Siempre redirige al dashboard después de login
+    async redirect({ url, baseUrl }) {
+      appBootTrace("auth:redirect", {
+        url,
+        baseUrl,
+      });
+
+      // Always send successful sign-ins to the dashboard.
       return `${baseUrl}/dashboard`;
+    },
+  },
+  events: {
+    async signIn(message) {
+      appBootTrace("auth:event:signIn", {
+        provider: message.account?.provider,
+        type: message.account?.type,
+        userId: message.user?.id,
+        isNewUser: message.isNewUser,
+      });
     },
   },
 });
