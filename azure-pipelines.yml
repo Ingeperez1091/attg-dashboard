@@ -234,6 +234,8 @@ stages:
                         { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~20" },
                         { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false" },
                         { "name": "NODE_ENV", "value": "production" },
+                        { "name": "WEBSITE_WARMUP_PATH", "value": "/login" },
+                        { "name": "WEBSITE_WARMUP_STATUSES", "value": "200-399" },
                         { "name": "WEBSITES_PORT", "value": "8080" },
                         { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "0" },
                         { "name": "WEBSITE_ENABLE_SYNC_UPDATE_SITE", "value": "true" },
@@ -250,3 +252,23 @@ stages:
                     deploymentMethod: zipDeploy
                     removeAdditionalFilesFlag: true
                     takeAppOfflineFlag: true
+
+                - script: |
+                    set -euo pipefail
+
+                    APP_URL="https://$(windowsWebAppName).azurewebsites.net/login"
+                    echo "Warming up $APP_URL"
+
+                    for i in $(seq 1 20); do
+                      code=$(curl -sS -o /dev/null -w "%{http_code}" "$APP_URL" || true)
+                      echo "Attempt $i -> HTTP $code"
+                      if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
+                        echo "Warmup succeeded"
+                        exit 0
+                      fi
+                      sleep 10
+                    done
+
+                    echo "Warmup did not reach HTTP 2xx/3xx within timeout window"
+                    exit 1
+                  displayName: Post-deploy warmup probe
