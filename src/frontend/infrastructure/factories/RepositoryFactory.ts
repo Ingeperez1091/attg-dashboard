@@ -20,6 +20,7 @@ import { DenominatorModelDbRepository } from "@/infrastructure/persistence/datab
 import { DenominatorFilterDbRepository } from "@/infrastructure/persistence/database/DenominatorFilterDbRepository";
 import { AdoptionSettingsDbRepository } from "@/infrastructure/persistence/database/AdoptionSettingsDbRepository";
 import { DenominatorAuditDbRepository } from "@/infrastructure/persistence/database/DenominatorAuditDbRepository";
+import { createRepositoryTraceProxy } from "@/lib/runtime-trace";
 
 export class RepositoryFactory {
   static create(): RepositoryBundle {
@@ -44,16 +45,16 @@ export class RepositoryFactory {
     const sqlClient = createRuntimeSqlClient();
     const applications = new ApplicationDbRepository(sqlClient);
     return {
-      users: new UserDbRepository(sqlClient),
-      roles: new RoleDbRepository(sqlClient),
-      applications,
-      userApplications: new UserApplicationRepository(sqlClient),
-      numeratorFilter: new NumeratorFilterDbRepository(sqlClient),
-      ingestionRepository: new NumeratorIngestionDbRepository(sqlClient),
-      denominatorModel: new DenominatorModelDbRepository(sqlClient),
-      denominatorFilter: new DenominatorFilterDbRepository(sqlClient),
-      adoptionSettings: new AdoptionSettingsDbRepository(sqlClient),
-      denominatorAudit: new DenominatorAuditDbRepository(sqlClient)
+      users: createRepositoryTraceProxy(new UserDbRepository(sqlClient), "users"),
+      roles: createRepositoryTraceProxy(new RoleDbRepository(sqlClient), "roles"),
+      applications: createRepositoryTraceProxy(applications, "applications"),
+      userApplications: createRepositoryTraceProxy(new UserApplicationRepository(sqlClient), "userApplications"),
+      numeratorFilter: createRepositoryTraceProxy(new NumeratorFilterDbRepository(sqlClient), "numeratorFilter"),
+      ingestionRepository: createRepositoryTraceProxy(new NumeratorIngestionDbRepository(sqlClient), "ingestionRepository"),
+      denominatorModel: createRepositoryTraceProxy(new DenominatorModelDbRepository(sqlClient), "denominatorModel"),
+      denominatorFilter: createRepositoryTraceProxy(new DenominatorFilterDbRepository(sqlClient), "denominatorFilter"),
+      adoptionSettings: createRepositoryTraceProxy(new AdoptionSettingsDbRepository(sqlClient), "adoptionSettings"),
+      denominatorAudit: createRepositoryTraceProxy(new DenominatorAuditDbRepository(sqlClient), "denominatorAudit")
     };
   }
 }
