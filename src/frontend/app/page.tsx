@@ -5,12 +5,9 @@ import { getRuntimeRepositories } from "@/infrastructure/persistence/runtime/rep
 import { requireAdministrator } from "@/lib/auth/guards";
 import { AppError } from "@/lib/api/error-handler";
 import { createServerRequest } from "@/lib/auth/server-request";
-import { appBootTrace } from "@/lib/runtime-trace";
+import { appBootTrace, runWithTraceContext } from "@/lib/runtime-trace";
 
 export default async function HomePage() {
-import { appBootTrace, runWithTraceContext } from "@/lib/runtime-trace";
-    const startedAt = Date.now();
-    appBootTrace("home:start", { pathname: "/" });
   const request = await createServerRequest("http://internal.local/");
   const requestId = request.headers.get("x-request-id") ?? "unknown";
 
@@ -47,12 +44,12 @@ import { appBootTrace, runWithTraceContext } from "@/lib/runtime-trace";
       applications: applications.length,
       roles: roles.length
     });
-      <div className="page-content-inner">
+
     return (
       <main className="page-main-content">
         <div className="page-content-inner">
           <h1 className="page-title">Dashboard</h1>
-            <span className="stat-card__label">Applications</span>
+
           <div className="card-grid">
             <div className="stat-card">
               <span className="stat-card__label">Applications</span>
@@ -69,15 +66,15 @@ import { appBootTrace, runWithTraceContext } from "@/lib/runtime-trace";
               <span className="stat-card__value">{roles.length}</span>
               <span className="stat-card__sub">{roles.map((r: any) => r.roleName).join(" · ")}</span>
             </div>
-            <span className="stat-card__value">—</span>
+          </div>
 
           <div className="card">
             <h2 className="card__title">Quick Actions</h2>
             <div className="form-actions">
               <Link href="/admin/users" className="btn btn--primary">User Administration</Link>
             </div>
-        <div className="card">
-          <div className="form-actions">
+          </div>
+
           <p style={{ marginTop: '1.5rem', fontSize: '0.8rem', color: 'var(--app-text-secondary)' }}>
             Running in <strong>in-memory</strong> mode — no database connection required for local development.
           </p>
@@ -85,3 +82,4 @@ import { appBootTrace, runWithTraceContext } from "@/lib/runtime-trace";
       </main>
     );
   });
+}
