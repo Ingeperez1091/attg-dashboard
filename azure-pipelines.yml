@@ -10,6 +10,7 @@ variables:
   azureServiceConnection: "8287475a-4f2f-4710-91f6-3c9f9fb6f19e"
   windowsWebAppName: "attg-dahsboard-win"
   artifactName: "drop"
+  windowsWebAppResourceGroup: "attg-analytics"
 
 stages:
   - stage: Build
@@ -111,15 +112,14 @@ stages:
               cp -a "$APP_DIR/server.js" "$APP_DIR/server.cjs"
 
               # Prepend IISNode PORT shim to server.cjs
-              {
-                cat <<'SHIM_EOF'
-const fs = require('fs');
-if (process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) {
-  process.env.PORT = process.env.WEBSITES_PORT || '8080';
-}
-SHIM_EOF
-                cat "$APP_DIR/server.cjs"
-              } > "$APP_DIR/server.cjs.tmp" && mv "$APP_DIR/server.cjs.tmp" "$APP_DIR/server.cjs"
+              cat > "$APP_DIR/server.cjs.tmp" << 'SHIM_EOF'
+              const fs = require('fs');
+              if (process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) {
+                process.env.PORT = process.env.WEBSITES_PORT || '8080';
+              }
+              SHIM_EOF
+              cat "$APP_DIR/server.cjs" >> "$APP_DIR/server.cjs.tmp"
+              mv "$APP_DIR/server.cjs.tmp" "$APP_DIR/server.cjs"
 
               rm -f "$APP_DIR/.env.local"
               mkdir -p "$APP_DIR/iisnode"
@@ -223,6 +223,7 @@ SHIM_EOF
                   inputs:
                     azureSubscription: $(azureServiceConnection)
                     appName: $(windowsWebAppName)
+                    azureResourceGroup: $(windowsWebAppResourceGroup)
                     appSettings: |
                       [
                         { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~20" },
