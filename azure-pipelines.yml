@@ -6,7 +6,7 @@ trigger:
 pr: none
 
 variables:
-  nodeVersion: "24.x"
+  nodeVersion: "20.x"
   azureServiceConnection: "8287475a-4f2f-4710-91f6-3c9f9fb6f19e"
   windowsWebAppName: "attg-dahsboard-win"
   artifactName: "drop"
@@ -121,6 +121,9 @@ stages:
               fi
 
               rm -f "$APP_DIR/.env.local"
+
+              # Create iisnode log directory so iisnode can write stdout/stderr logs immediately.
+              mkdir -p "$APP_DIR/iisnode"
             displayName: Prepare deployable package
             workingDirectory: $(repoRoot)
 
@@ -140,6 +143,7 @@ stages:
                 "$APP_DIR/server.js"
                 "$APP_DIR/server.cjs"
                 "$APP_DIR/package.json"
+                "$APP_DIR/iisnode"
               )
 
               for path in "${required_paths[@]}"; do
@@ -158,6 +162,25 @@ stages:
               grep -n "currentPort" "$APP_DIR/server.cjs" | sed -n '1,3p'
               echo "server.cjs header preview:"
               sed -n '1,20p' "$APP_DIR/server.cjs"
+
+              APP_PATHS_MANIFEST="$APP_DIR/.next/server/app-paths-manifest.json"
+              if [ -f "$APP_PATHS_MANIFEST" ]; then
+                echo "app-paths-manifest route check:"
+                grep -n '"/login"\|"/dashboard"' "$APP_PATHS_MANIFEST" || true
+
+                if ! grep -q '"/login"' "$APP_PATHS_MANIFEST"; then
+                  echo "Missing /login route in packaged app-paths manifest"
+                  exit 1
+                fi
+
+                if ! grep -q '"/dashboard"' "$APP_PATHS_MANIFEST"; then
+                  echo "Missing /dashboard route in packaged app-paths manifest"
+                  exit 1
+                fi
+              else
+                echo "Missing Next app-paths manifest: $APP_PATHS_MANIFEST"
+                exit 1
+              fi
 
               echo "Artifact verification passed."
             displayName: Verify artifact layout parity
@@ -198,7 +221,7 @@ stages:
                     appName: $(windowsWebAppName)
                     appSettings: |
                       [
-                        { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~24" },
+                        { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~20" },
                         { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false" },
                         { "name": "NODE_ENV", "value": "production" },
                         { "name": "WEBSITES_PORT", "value": "8080" },
@@ -214,3 +237,6 @@ stages:
                     appType: webApp
                     appName: $(windowsWebAppName)
                     package: "$(Pipeline.Workspace)/$(artifactName)/app.zip"
+                    deploymentMethod: zipDeploy
+                    removeAdditionalFilesFlag: true
+                    takeAppOfflineFlag: true
