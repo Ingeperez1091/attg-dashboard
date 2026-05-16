@@ -176,15 +176,15 @@ stages:
                 cat "$APP_PATHS_MANIFEST"
                 echo ""
                 echo "app-paths-manifest route check:"
-                grep -n '"/login"\|"/dashboard"' "$APP_PATHS_MANIFEST" || echo "(no /login or /dashboard routes found in manifest)"
+                grep -n '"/login/page"\|"/dashboard/page"' "$APP_PATHS_MANIFEST" || echo "(no /login/page or /dashboard/page routes found in manifest)"
 
-                if ! grep -q '"/login"' "$APP_PATHS_MANIFEST"; then
-                  echo "Missing /login route in packaged app-paths manifest"
+                if ! grep -q '"/login/page"' "$APP_PATHS_MANIFEST"; then
+                  echo "Missing /login/page route in packaged app-paths manifest"
                   exit 1
                 fi
 
-                if ! grep -q '"/dashboard"' "$APP_PATHS_MANIFEST"; then
-                  echo "Missing /dashboard route in packaged app-paths manifest"
+                if ! grep -q '"/dashboard/page"' "$APP_PATHS_MANIFEST"; then
+                  echo "Missing /dashboard/page route in packaged app-paths manifest"
                   exit 1
                 fi
               else
