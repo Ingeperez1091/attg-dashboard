@@ -8,7 +8,7 @@ pr: none
 variables:
   nodeVersion: "24.x"
   azureServiceConnection: "8287475a-4f2f-4710-91f6-3c9f9fb6f19e"
-  linuxWebAppName: "att-dashboard"
+  windowsWebAppName: "attg-dahsboard-win"
   artifactName: "drop"
 
 stages:
@@ -55,11 +55,6 @@ stages:
             displayName: Use Node.js $(nodeVersion)
             inputs:
               version: $(nodeVersion)
-              
-          # - task: NodeTool@0
-          #   displayName: Use Node.js $(nodeVersion)
-          #   inputs:
-          #     versionSpec: $(nodeVersion)
 
           - script: npm install
             displayName: Install dependencies
@@ -167,12 +162,12 @@ stages:
             artifact: $(artifactName)
 
   - stage: Deploy
-    displayName: Deploy to Azure Web App (Linux)
+    displayName: Deploy to Azure Web App (Windows)
     dependsOn: Build
     jobs:
-      - deployment: DeployLinuxWebApp
-        displayName: Deploy Linux Web App
-        environment: develop-linux
+      - deployment: DeployWindowsWebApp
+        displayName: Deploy Windows Web App
+        environment: develop-windows
         strategy:
           runOnce:
             deploy:
@@ -182,10 +177,10 @@ stages:
                   artifact: $(artifactName)
 
                 - task: AzureWebApp@1
-                  displayName: Deploy to Azure App Service (Linux)
+                  displayName: Deploy to Azure App Service (Windows)
                   inputs:
                     azureSubscription: $(azureServiceConnection)
-                    appType: webAppLinux
-                    appName: $(linuxWebAppName)
+                    appType: webApp
+                    appName: $(windowsWebAppName)
                     package: "$(Pipeline.Workspace)/$(artifactName)/app.zip"
-                    startUpCommand: "node server.js"
+                    startUpCommand: "npm start"
