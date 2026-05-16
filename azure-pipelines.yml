@@ -118,8 +118,11 @@ stages:
               # parseInt(namedPipeString) → NaN → Next.js falls back to TCP 3000 instead of the named pipe.
               # Prepend a shim that replaces the named-pipe value with the real TCP port before
               # any server code reads it. This is format-agnostic and survives Next.js server.js changes.
-              SHIM="// IISNode named-pipe port shim -- injected by Azure Pipelines\nif (process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) { process.env.PORT = process.env.WEBSITES_PORT || '8080'; }\n"
-              printf '%s' "$SHIM" | cat - "$APP_DIR/server.cjs" > "$APP_DIR/server.cjs.tmp" && mv "$APP_DIR/server.cjs.tmp" "$APP_DIR/server.cjs"
+              {
+                echo '// IISNode named-pipe port shim -- injected by Azure Pipelines'
+                echo "if (process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) { process.env.PORT = process.env.WEBSITES_PORT || '8080'; }"
+                cat "$APP_DIR/server.cjs"
+              } > "$APP_DIR/server.cjs.tmp" && mv "$APP_DIR/server.cjs.tmp" "$APP_DIR/server.cjs"
               echo "Prepended IISNode PORT shim to server.cjs"
 
               rm -f "$APP_DIR/.env.local"
@@ -167,8 +170,13 @@ stages:
 
               APP_PATHS_MANIFEST="$APP_DIR/.next/server/app-paths-manifest.json"
               if [ -f "$APP_PATHS_MANIFEST" ]; then
+                echo ".next/server/ directory listing:"
+                ls -1 "$APP_DIR/.next/server/"
+                echo "app-paths-manifest FULL content:"
+                cat "$APP_PATHS_MANIFEST"
+                echo ""
                 echo "app-paths-manifest route check:"
-                grep -n '"/login"\|"/dashboard"' "$APP_PATHS_MANIFEST" || true
+                grep -n '"/login"\|"/dashboard"' "$APP_PATHS_MANIFEST" || echo "(no /login or /dashboard routes found in manifest)"
 
                 if ! grep -q '"/login"' "$APP_PATHS_MANIFEST"; then
                   echo "Missing /login route in packaged app-paths manifest"
