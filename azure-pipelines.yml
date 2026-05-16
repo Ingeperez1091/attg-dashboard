@@ -98,6 +98,9 @@ stages:
               fi
 
               mkdir -p "$APP_DIR/.next"
+              if [ -d src/frontend/.next/server ]; then
+                cp -a src/frontend/.next/server "$APP_DIR/.next/server"
+              fi
               cp -a src/frontend/.next/static "$APP_DIR/.next/static"
 
               if [ -d src/frontend/public ]; then
@@ -192,7 +195,9 @@ stages:
                       [
                         { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~24" },
                         { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false" },
-                        { "name": "NODE_ENV", "value": "production" }
+                        { "name": "NODE_ENV", "value": "production" },
+                        { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "0" },
+                        { "name": "WEBSITE_ENABLE_SYNC_UPDATE_SITE", "value": "true" }
                       ]
 
                 - task: AzureWebApp@1
