@@ -119,6 +119,87 @@ stages:
               # Prepend a shim that replaces the named-pipe value with the real TCP port before
               # any server code reads it. This is format-agnostic and survives Next.js server.js changes.
               {
+                cat <<'EOF'
+const fs = require('fs');
+const Module = require('module');
+
+const startupTraceEnabled = process.env.APP_BOOT_TRACE === 'true';
+const startupTraceFile = process.env.APP_BOOT_TRACE_FILE || 'D:\\home\\LogFiles\\app-startup-trace.log';
+
+function writeStartupTrace(message, context) {
+  if (!startupTraceEnabled) {
+    return;
+  }
+
+  const payload = context ? `${message} ${JSON.stringify(context)}` : message;
+  console.log(`[startup-trace] ${payload}`);
+
+  try {
+    fs.appendFileSync(startupTraceFile, `${new Date().toISOString()} ${payload}\n`);
+  } catch (error) {
+    console.log('[startup-trace] failed to write trace file', String(error));
+  }
+}
+
+if (startupTraceEnabled) {
+  writeStartupTrace('boot', {
+    pid: process.pid,
+    cwd: process.cwd(),
+    execPath: process.execPath,
+    argv: process.argv,
+    nodeEnv: process.env.NODE_ENV,
+    port: process.env.PORT,
+    websitesPort: process.env.WEBSITES_PORT,
+    appPath: process.env.APP_PATH,
+    iisnodeVersion: process.env.IISNODE_VERSION,
+  });
+
+  process.on('uncaughtException', (error) => {
+    writeStartupTrace('uncaughtException', { message: error?.message, stack: error?.stack });
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    writeStartupTrace('unhandledRejection', { reason: String(reason) });
+  });
+
+  const originalLoad = Module._load;
+  Module._load = function patchedLoad(request, parent, isMain) {
+    const loaded = originalLoad.apply(this, arguments);
+    if (request === 'next/dist/server/lib/start-server' && loaded && typeof loaded.startServer === 'function') {
+      const originalStartServer = loaded.startServer;
+      loaded.startServer = async function tracedStartServer(...args) {
+        writeStartupTrace('startServer:call', {
+          port: process.env.PORT,
+          websitesPort: process.env.WEBSITES_PORT,
+        });
+
+        try {
+          const result = await originalStartServer.apply(this, args);
+          writeStartupTrace('startServer:success');
+          return result;
+        } catch (error) {
+          writeStartupTrace('startServer:error', {
+            message: error?.message,
+            stack: error?.stack,
+          });
+          throw error;
+        }
+      };
+    }
+
+    return loaded;
+  };
+}
+
+if (startupTraceEnabled && process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) {
+  writeStartupTrace('named-pipe-port-shim', {
+    originalPort: process.env.PORT,
+    fallbackPort: process.env.WEBSITES_PORT || '8080',
+  });
+  process.env.PORT = process.env.WEBSITES_PORT || '8080';
+}
+
+EOF
                 echo '// IISNode named-pipe port shim -- injected by Azure Pipelines'
                 echo "if (process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) { process.env.PORT = process.env.WEBSITES_PORT || '8080'; }"
                 cat "$APP_DIR/server.cjs"
@@ -234,6 +315,8 @@ stages:
                         { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~20" },
                         { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false" },
                         { "name": "NODE_ENV", "value": "production" },
+                        { "name": "APP_BOOT_TRACE", "value": "true" },
+                        { "name": "APP_BOOT_TRACE_FILE", "value": "D:\\home\\LogFiles\\app-startup-trace.log" },
                         { "name": "WEBSITE_WARMUP_PATH", "value": "/login" },
                         { "name": "WEBSITE_WARMUP_STATUSES", "value": "200-399" },
                         { "name": "WEBSITES_PORT", "value": "8080" },
