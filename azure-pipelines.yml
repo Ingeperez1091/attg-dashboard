@@ -294,6 +294,7 @@ stages:
                         { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~22" },
                         { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false" },
                         { "name": "NODE_ENV", "value": "production" },
+                        { "name": "AUTH_URL", "value": "https://$(windowsWebAppHostname)" },
                         { "name": "APP_BOOT_TRACE", "value": "true" },
                         { "name": "APP_BOOT_TRACE_FILE", "value": "D:\\home\\LogFiles\\app-startup-trace.log" },
                         { "name": "WEBSITE_WARMUP_PATH", "value": "/login" },
