@@ -110,6 +110,13 @@ stages:
 
               # Keep parity with IIS deployment output (without using .env.local in App Service).
               cp -a "$APP_DIR/server.js" "$APP_DIR/server.cjs"
+
+              # IISNode on Windows App Service can provide PORT as a named pipe; avoid parseInt(PORT).
+              if grep -q "parseInt(process.env.PORT, 10)" "$APP_DIR/server.cjs"; then
+                sed -i -E "s/const currentPort = parseInt\(process\.env\.PORT, 10\) \|\| 3000/const currentPort = process.env.PORT || 3000/g" "$APP_DIR/server.cjs"
+                echo "Patched server.cjs for IIS named-pipe PORT binding"
+              fi
+
               rm -f "$APP_DIR/.env.local"
             displayName: Prepare deployable package
             workingDirectory: $(repoRoot)
@@ -176,6 +183,18 @@ stages:
                   displayName: Download build artifact
                   artifact: $(artifactName)
 
+                - task: AzureAppServiceSettings@1
+                  displayName: Configure App Service settings
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    appName: $(windowsWebAppName)
+                    appSettings: |
+                      [
+                        { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~24" },
+                        { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false" },
+                        { "name": "NODE_ENV", "value": "production" }
+                      ]
+
                 - task: AzureWebApp@1
                   displayName: Deploy to Azure App Service (Windows)
                   inputs:
@@ -183,4 +202,3 @@ stages:
                     appType: webApp
                     appName: $(windowsWebAppName)
                     package: "$(Pipeline.Workspace)/$(artifactName)/app.zip"
-                    startUpCommand: "npm start"
