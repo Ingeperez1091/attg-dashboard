@@ -301,7 +301,8 @@ stages:
                         { "name": "WEBSITE_WARMUP_STATUSES", "value": "200-399" },
                         { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "0" },
                         { "name": "WEBSITE_ENABLE_SYNC_UPDATE_SITE", "value": "true" },
-                        { "name": "WEBSITE_LOCAL_CACHE_OPTION", "value": "Never" }
+                        { "name": "WEBSITE_LOCAL_CACHE_OPTION", "value": "Never" },
+                        { "name": "USE_INMEMORY_REPOSITORY", "value": "false" }
                       ]
 
                 - task: AzureCLI@2
