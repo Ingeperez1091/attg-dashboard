@@ -177,13 +177,39 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
 
     async redirect({ url, baseUrl }) {
+      // Keep Auth.js default redirect safety semantics and only coerce
+      // same-origin root to /dashboard.
+      let resolved = baseUrl;
+
+      if (url.startsWith("/")) {
+        resolved = `${baseUrl}${url}`;
+      } else {
+        try {
+          const target = new URL(url);
+          if (target.origin === baseUrl) {
+            resolved = url;
+          }
+        } catch {
+          resolved = baseUrl;
+        }
+      }
+
+      try {
+        const resolvedUrl = new URL(resolved);
+        if (resolvedUrl.origin === baseUrl && resolvedUrl.pathname === "/") {
+          resolved = `${baseUrl}/dashboard`;
+        }
+      } catch {
+        resolved = baseUrl;
+      }
+
       appBootTrace("auth:redirect", {
         url,
         baseUrl,
+        resolved,
       });
 
-      // Always send successful sign-ins to the dashboard.
-      return `${baseUrl}/dashboard`;
+      return resolved;
     },
   },
   events: {
