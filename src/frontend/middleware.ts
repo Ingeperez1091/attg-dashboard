@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { isDevBypassEnabled } from "@/lib/auth/dev-bypass";
+import { appBootTrace } from "@/lib/runtime-trace";
+
+function getOrCreateRequestId(existing?: string | null): string {
+  if (existing && existing.trim()) {
+    return existing.trim();
+  }
+
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 function getCanonicalOrigin(origin: string): string {
   const configured = process.env.AUTH_URL?.trim();
@@ -38,10 +47,20 @@ function normalizeIisNodePathname(pathname: string): string {
 
 export default auth((request) => {
   const normalizedPath = normalizeIisNodePathname(request.nextUrl.pathname);
+  const requestId = getOrCreateRequestId(request.headers.get("x-request-id"));
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-request-id", requestId);
+  appBootTrace("middleware:request", {
+    requestId,
+    method: request.method,
+    pathname: normalizedPath,
+    rawPathname: request.nextUrl.pathname
+  });
 
   // Never gate native Auth.js endpoints; they must remain publicly reachable.
   if (normalizedPath.startsWith("/api/auth/")) {
-    return NextResponse.next();
+    appBootTrace("middleware:allow-auth-route", { pathname: normalizedPath });
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   const devBypassEnabled = isDevBypassEnabled();
@@ -50,7 +69,14 @@ export default auth((request) => {
     : undefined;
 
   if (request.auth || (devBypassEnabled && devBypassUserId)) {
-    return NextResponse.next();
+    appBootTrace("middleware:allow-authenticated", {
+      requestId,
+      pathname: normalizedPath,
+      devBypassEnabled,
+      hasSession: Boolean(request.auth),
+      hasDevBypassUser: Boolean(devBypassUserId)
+    });
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   const loginUrl = new URL("/login", getCanonicalOrigin(request.nextUrl.origin));
@@ -58,6 +84,11 @@ export default auth((request) => {
   // IISNode can surface internal named-pipe paths (for example //pipe/...) on rewritten requests.
   const safeReturnUrl = rawReturnUrl.startsWith("//") ? "/" : rawReturnUrl;
   loginUrl.searchParams.set("returnUrl", safeReturnUrl);
+  appBootTrace("middleware:redirect-login", {
+    requestId,
+    pathname: normalizedPath,
+    returnUrl: safeReturnUrl
+  });
   return NextResponse.redirect(loginUrl);
 });
 

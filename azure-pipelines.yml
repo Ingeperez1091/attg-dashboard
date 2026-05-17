@@ -6,10 +6,12 @@ trigger:
 pr: none
 
 variables:
-  nodeVersion: "24.x"
+  nodeVersion: "22.x"
   azureServiceConnection: "8287475a-4f2f-4710-91f6-3c9f9fb6f19e"
-  windowsWebAppName: "attg-dahsboard-win"
-  artifactName: "drop"
+  windowsWebAppName: "attg-metrics-win"
+  windowsWebAppHostname: "attg-metrics-win-arazhxb4cfg8h7aq.westus2-01.azurewebsites.net"
+  artifactName: "metrics-win-app"
+  windowsWebAppResourceGroup: "attg-analytics"
 
 stages:
   - stage: Build
@@ -108,9 +110,79 @@ stages:
                 cp -a src/frontend/web.config "$APP_DIR/web.config"
               fi
 
-              # Keep parity with IIS deployment output (without using .env.local in App Service).
               cp -a "$APP_DIR/server.js" "$APP_DIR/server.cjs"
+
+              # Prepend IISNode PORT shim to server.cjs.
+              {
+                echo "const fs = require('fs');"
+                echo "const http = require('http');"
+                echo "const startupTraceEnabled = process.env.APP_BOOT_TRACE === 'true';"
+                echo "const startupTraceFile = process.env.APP_BOOT_TRACE_FILE || 'D:\\\\home\\\\LogFiles\\\\app-startup-trace.log';"
+                echo "function writeStartupTrace(message, context) {"
+                echo "  if (!startupTraceEnabled) return;"
+                echo "  const payload = context ? message + ' ' + JSON.stringify(context) : message;"
+                echo "  console.log('[startup-trace] ' + payload);"
+                echo "  try { fs.appendFileSync(startupTraceFile, new Date().toISOString() + ' ' + payload + '\\n'); } catch (error) { console.log('[startup-trace] file write failed', String(error)); }"
+                echo "}"
+                echo "if (startupTraceEnabled) {"
+                echo "  writeStartupTrace('boot', { pid: process.pid, port: process.env.PORT, websitesPort: process.env.WEBSITES_PORT, nodeEnv: process.env.NODE_ENV, portIsNamedPipe: !!(process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) });"
+                echo "  process.on('uncaughtException', (error) => writeStartupTrace('uncaughtException', { message: error?.message, stack: error?.stack }));"
+                echo "  process.on('unhandledRejection', (reason) => writeStartupTrace('unhandledRejection', { reason: String(reason) }));"
+                echo "  const _origConsoleError = console.error.bind(console);"
+                echo "  console.error = function shimConsoleError(...args) {"
+                echo "    _origConsoleError(...args);"
+                echo "    try { const msg = args.map(a => (a instanceof Error ? a.stack : (typeof a === 'object' ? JSON.stringify(a) : String(a)))).join(' '); writeStartupTrace('console.error', { msg: msg.slice(0, 2000) }); } catch {}"
+                echo "  };"
+                echo "}"
+                echo "const originalCreateServer = http.createServer;"
+                echo "http.createServer = function patchedCreateServer(...args) {"
+                echo "  const maybeListener = args.length > 0 ? args[args.length - 1] : undefined;"
+                echo "  if (typeof maybeListener === 'function') {"
+                echo "    args[args.length - 1] = function tracedRequestListener(req, res) {"
+                echo "      const start = Date.now();"
+                echo "      writeStartupTrace('request:start', { method: req?.method, url: req?.url, host: req?.headers?.host });"
+                echo "      res.on('finish', () => writeStartupTrace('request:finish', { method: req?.method, url: req?.url, statusCode: res.statusCode, elapsedMs: Date.now() - start }));"
+                echo "      return maybeListener(req, res);"
+                echo "    };"
+                echo "  }"
+                echo "  return originalCreateServer.apply(this, args);"
+                echo "};"
+                echo "// IISNode: even when App Service pre-sets PORT to a TCP port number,"
+                echo "// IISNode always passes the named pipe path as process.argv[last]."
+                echo "// Detect it from argv first; fall back to PORT if it looks like a pipe path."
+                echo "var _iisNodePipe = null;"
+                echo "if (process.argv && process.argv.length > 2) {"
+                echo "  var _lastArg = process.argv[process.argv.length - 1];"
+                echo "  if (typeof _lastArg === 'string' && _lastArg.toLowerCase().indexOf('pipe') !== -1) {"
+                echo "    _iisNodePipe = _lastArg;"
+                echo "  }"
+                echo "}"
+                echo "if (!_iisNodePipe && process.env.PORT && isNaN(parseInt(process.env.PORT, 10))) {"
+                echo "  _iisNodePipe = process.env.PORT;"
+                echo "}"
+                echo "writeStartupTrace('iisnode-shim:init', { argv: process.argv, port: process.env.PORT, detectedPipe: _iisNodePipe });"
+                echo "if (_iisNodePipe) {"
+                echo "  var _tcpPort = parseInt(process.env.PORT, 10) || 3000;"
+                echo "  var _hm = require('http');"
+                echo "  var _ol = _hm.Server.prototype.listen;"
+                echo "  _hm.Server.prototype.listen = function iisNodePipeListen() {"
+                echo "    var port = arguments[0];"
+                echo "    var n = typeof port === 'number' ? port : parseInt(port, 10);"
+                echo "    if (isNaN(n) || n === _tcpPort || n === 3000) {"
+                echo "      writeStartupTrace('iisnode-shim:redirect', { from: port, to: _iisNodePipe });"
+                echo "      var rest = [_iisNodePipe];"
+                echo "      for (var i = 1; i < arguments.length; i++) { if (typeof arguments[i] !== 'string') rest.push(arguments[i]); }"
+                echo "      return _ol.apply(this, rest);"
+                echo "    }"
+                echo "    return _ol.apply(this, arguments);"
+                echo "  };"
+                echo "}"
+                cat "$APP_DIR/server.cjs"
+              } > "$APP_DIR/server.cjs.tmp"
+              mv "$APP_DIR/server.cjs.tmp" "$APP_DIR/server.cjs"
+
               rm -f "$APP_DIR/.env.local"
+              mkdir -p "$APP_DIR/iisnode"
             displayName: Prepare deployable package
             workingDirectory: $(repoRoot)
 
@@ -130,6 +202,7 @@ stages:
                 "$APP_DIR/server.js"
                 "$APP_DIR/server.cjs"
                 "$APP_DIR/package.json"
+                "$APP_DIR/iisnode"
               )
 
               for path in "${required_paths[@]}"; do
@@ -141,6 +214,40 @@ stages:
 
               if [ -e "$APP_DIR/.env.local" ]; then
                 echo "Unexpected file present: $APP_DIR/.env.local"
+                exit 1
+              fi
+
+              echo "server.cjs shim check:"
+              if grep -n -E "process\.env\.PORT.*isNaN\(parseInt\(process\.env\.PORT, 10\)\)|process\.env\.PORT = process\.env\.WEBSITES_PORT \|\| '8080'" "$APP_DIR/server.cjs" | sed -n '1,2p'; then
+                echo "server.cjs shim marker found"
+              else
+                echo "Missing PORT shim marker in server.cjs"
+                exit 1
+              fi
+              echo "server.cjs header preview:"
+              sed -n '1,5p' "$APP_DIR/server.cjs"
+
+              APP_PATHS_MANIFEST="$APP_DIR/.next/server/app-paths-manifest.json"
+              if [ -f "$APP_PATHS_MANIFEST" ]; then
+                echo ".next/server/ directory listing:"
+                ls -1 "$APP_DIR/.next/server/"
+                echo "app-paths-manifest FULL content:"
+                cat "$APP_PATHS_MANIFEST"
+                echo ""
+                echo "app-paths-manifest route check:"
+                grep -n '"/login/page"\|"/dashboard/page"' "$APP_PATHS_MANIFEST" || echo "(no /login/page or /dashboard/page routes found in manifest)"
+
+                if ! grep -q '"/login/page"' "$APP_PATHS_MANIFEST"; then
+                  echo "Missing /login/page route in packaged app-paths manifest"
+                  exit 1
+                fi
+
+                if ! grep -q '"/dashboard/page"' "$APP_PATHS_MANIFEST"; then
+                  echo "Missing /dashboard/page route in packaged app-paths manifest"
+                  exit 1
+                fi
+              else
+                echo "Missing Next app-paths manifest: $APP_PATHS_MANIFEST"
                 exit 1
               fi
 
@@ -176,6 +283,42 @@ stages:
                   displayName: Download build artifact
                   artifact: $(artifactName)
 
+                - task: AzureAppServiceSettings@1
+                  displayName: Configure App Service settings
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    appName: $(windowsWebAppName)
+                    azureResourceGroup: $(windowsWebAppResourceGroup)
+                    appSettings: |
+                      [
+                        { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~22" },
+                        { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false" },
+                        { "name": "NODE_ENV", "value": "production" },
+                        { "name": "AUTH_URL", "value": "https://$(windowsWebAppHostname)" },
+                        { "name": "APP_BOOT_TRACE", "value": "true" },
+                        { "name": "APP_BOOT_TRACE_FILE", "value": "D:\\home\\LogFiles\\app-startup-trace.log" },
+                        { "name": "WEBSITE_WARMUP_PATH", "value": "/login" },
+                        { "name": "WEBSITE_WARMUP_STATUSES", "value": "200-399" },
+                        { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "0" },
+                        { "name": "WEBSITE_ENABLE_SYNC_UPDATE_SITE", "value": "true" },
+                        { "name": "WEBSITE_LOCAL_CACHE_OPTION", "value": "Never" },
+                        { "name": "USE_INMEMORY_REPOSITORY", "value": "false" }
+                      ]
+
+                - task: AzureCLI@2
+                  displayName: Remove stale PORT app settings
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      az webapp config appsettings delete \
+                        --resource-group "$(windowsWebAppResourceGroup)" \
+                        --name "$(windowsWebAppName)" \
+                        --setting-names PORT WEBSITES_PORT \
+                        --only-show-errors || true
+
                 - task: AzureWebApp@1
                   displayName: Deploy to Azure App Service (Windows)
                   inputs:
@@ -183,4 +326,14 @@ stages:
                     appType: webApp
                     appName: $(windowsWebAppName)
                     package: "$(Pipeline.Workspace)/$(artifactName)/app.zip"
-                    startUpCommand: "npm start"
+                    deploymentMethod: zipDeploy
+                    removeAdditionalFilesFlag: true
+                    takeAppOfflineFlag: true
+
+                - script: |
+                    set -euo pipefail
+
+                    echo "Skipping post-deploy public URL warmup probe."
+                    echo "Relying on App Service native warmup settings and runtime logs for validation."
+                  displayName: Post-deploy validation note
+

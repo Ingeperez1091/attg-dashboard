@@ -18,5 +18,10 @@ export async function createServerRequest(url = "http://internal.local/"): Promi
     requestHeaders.set("Authorization", authorizationHeader);
   }
 
+  const requestIdHeader = headerStore.get("x-request-id");
+  if (requestIdHeader) {
+    requestHeaders.set("x-request-id", requestIdHeader);
+  }
+
   return new Request(url, { headers: requestHeaders });
 }

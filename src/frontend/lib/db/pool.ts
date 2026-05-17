@@ -1,4 +1,5 @@
 import { ConnectionPool } from "mssql";
+import { appBootTrace } from "@/lib/runtime-trace";
 
 let poolPromise: Promise<ConnectionPool> | null = null;
 
@@ -50,6 +51,45 @@ function parseSqlPortFromEnv(): number | undefined {
   }
 
   return parsed;
+}
+
+function parseConnectionStringValue(connectionString: string, keys: string[]): string | undefined {
+  const segments = connectionString.split(";");
+
+  for (const segment of segments) {
+    const separatorIndex = segment.indexOf("=");
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const rawKey = segment.slice(0, separatorIndex).trim().toLowerCase();
+    if (!keys.includes(rawKey)) {
+      continue;
+    }
+
+    const value = segment.slice(separatorIndex + 1).trim();
+    if (value.length > 0) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function resolveSafeSqlTargetFromConnectionString(connectionString: string): string | undefined {
+  const serverValue = parseConnectionStringValue(connectionString, [
+    "server",
+    "data source",
+    "address",
+    "addr",
+    "network address"
+  ]);
+
+  if (!serverValue) {
+    return undefined;
+  }
+
+  return serverValue.startsWith("tcp:") ? serverValue.slice(4) : serverValue;
 }
 
 function buildTrustedConnectionStringFromSqlEnv(): string | null {
@@ -194,12 +234,26 @@ export function getSqlConnectionPool(): Promise<ConnectionPool> {
       if (!trustedConnection) {
         const sqlAuthConfig = buildSqlAuthPoolConfigFromSqlEnv();
         if (sqlAuthConfig) {
+          appBootTrace("sql:pool:init", {
+            mode: "sql-auth-config",
+            trustedConnection,
+            targetServer: sqlAuthConfig.server,
+            hasPort: typeof sqlAuthConfig.port === "number",
+            hasInstanceName: Boolean(sqlAuthConfig.options?.instanceName)
+          });
           const pool = new ConnectionPool(sqlAuthConfig);
           return pool.connect();
         }
       }
 
-      return connectWithResolvedDriver(resolveConnectionString(), trustedConnection);
+      const connectionString = resolveConnectionString();
+      appBootTrace("sql:pool:init", {
+        mode: trustedConnection ? "trusted-connection-string" : "connection-string",
+        trustedConnection,
+        targetServer: resolveSafeSqlTargetFromConnectionString(connectionString) ?? "unresolved"
+      });
+
+      return connectWithResolvedDriver(connectionString, trustedConnection);
     })().catch((error: unknown) => {
       const e = error as { code?: string; originalError?: { message?: string } };
       const originalMessage = e.originalError?.message ?? "";

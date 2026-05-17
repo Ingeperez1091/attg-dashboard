@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import { validateRuntimeSecurityConfig } from "@/lib/security/runtime-security";
+import { appBootTrace } from "@/lib/runtime-trace";
 
 validateRuntimeSecurityConfig();
 
@@ -175,9 +176,50 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return session;
     },
 
-    async redirect({ baseUrl }) {
-      // Siempre redirige al dashboard después de login
-      return `${baseUrl}/dashboard`;
+    async redirect({ url, baseUrl }) {
+      // Keep Auth.js default redirect safety semantics and only coerce
+      // same-origin root to /dashboard.
+      let resolved = baseUrl;
+
+      if (url.startsWith("/")) {
+        resolved = `${baseUrl}${url}`;
+      } else {
+        try {
+          const target = new URL(url);
+          if (target.origin === baseUrl) {
+            resolved = url;
+          }
+        } catch {
+          resolved = baseUrl;
+        }
+      }
+
+      try {
+        const resolvedUrl = new URL(resolved);
+        if (resolvedUrl.origin === baseUrl && resolvedUrl.pathname === "/") {
+          resolved = `${baseUrl}/dashboard`;
+        }
+      } catch {
+        resolved = baseUrl;
+      }
+
+      appBootTrace("auth:redirect", {
+        url,
+        baseUrl,
+        resolved,
+      });
+
+      return resolved;
+    },
+  },
+  events: {
+    async signIn(message) {
+      appBootTrace("auth:event:signIn", {
+        provider: message.account?.provider,
+        type: message.account?.type,
+        userId: message.user?.id,
+        isNewUser: message.isNewUser,
+      });
     },
   },
 });

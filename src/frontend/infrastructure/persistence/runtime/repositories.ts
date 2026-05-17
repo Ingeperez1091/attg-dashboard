@@ -20,6 +20,7 @@ import { MetricsMemoryRepository } from "@/infrastructure/persistence/memory/Met
 import { DashboardUsageRepository } from "@/core/domain/repositories/dashboardUsageRepository";
 import { DashboardUsageDbRepository } from "@/infrastructure/persistence/database/DashboardUsageDbRepository";
 import { DashboardUsageMemoryRepository } from "@/infrastructure/persistence/memory/DashboardUsageMemoryRepository";
+import { createRepositoryTraceProxy } from "@/lib/runtime-trace";
 
 declare global {
   var __attgRuntimeRepositories: RepositoryBundle | undefined;
@@ -86,7 +87,7 @@ export function getRuntimeValidationPipelineRepository(): IValidationPipelineRep
   const env = getAppEnv();
   validationPipelineRepository = env.repositoryMode === "memory"
     ? new ValidationPipelineMemoryRepository()
-    : new ValidationPipelineDbRepository(createRuntimeSqlClient());
+    : createRepositoryTraceProxy(new ValidationPipelineDbRepository(createRuntimeSqlClient()), "validationPipelineRepository");
 
   return validationPipelineRepository;
 }
@@ -107,7 +108,7 @@ export function getRuntimeMetricsRepository(): IMetricsRepository {
   const env = getAppEnv();
   metricsRepository = env.repositoryMode === "memory"
     ? new MetricsMemoryRepository()
-    : new MetricsDbRepository(createRuntimeSqlClient());
+    : createRepositoryTraceProxy(new MetricsDbRepository(createRuntimeSqlClient()), "metricsRepository");
 
   return metricsRepository;
 }
@@ -120,7 +121,7 @@ export function getRuntimeDashboardUsageRepository(): DashboardUsageRepository {
   const env = getAppEnv();
   dashboardUsageRepository = env.repositoryMode === "memory"
     ? new DashboardUsageMemoryRepository()
-    : new DashboardUsageDbRepository(createRuntimeSqlClient());
+    : createRepositoryTraceProxy(new DashboardUsageDbRepository(createRuntimeSqlClient()), "dashboardUsageRepository");
 
   return dashboardUsageRepository;
 }
