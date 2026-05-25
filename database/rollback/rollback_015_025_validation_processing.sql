@@ -3,17 +3,28 @@ SET NOCOUNT ON;
 IF OBJECT_ID('app.usp_ExecutePipelineRun', 'P') IS NOT NULL
     DROP PROCEDURE app.usp_ExecutePipelineRun;
 
+IF OBJECT_ID('app.usp_CalculateMetrics', 'P') IS NOT NULL
+    DROP PROCEDURE app.usp_CalculateMetrics;
+
 IF OBJECT_ID('app.usp_ApplyNumeratorFilters', 'P') IS NOT NULL
     DROP PROCEDURE app.usp_ApplyNumeratorFilters;
 
 IF OBJECT_ID('app.usp_BuildFilteredDenominator', 'P') IS NOT NULL
     DROP PROCEDURE app.usp_BuildFilteredDenominator;
 
-IF OBJECT_ID('app.vw_DenominatorLocal', 'V') IS NOT NULL
-    DROP VIEW app.vw_DenominatorLocal;
+IF OBJECT_ID('app.InvestmentDummyFacts', 'U') IS NOT NULL
+    DROP TABLE app.InvestmentDummyFacts;
 
 IF OBJECT_ID('app.MetricSnapshots', 'U') IS NOT NULL
     DROP TABLE app.MetricSnapshots;
+
+:r ..\schema\app\MetricsSnapshotsBase.sql
+
+IF OBJECT_ID('app.MetricSnapshots', 'U') IS NOT NULL
+    DROP TABLE app.MetricSnapshots;
+
+IF OBJECT_ID('app.vw_DenominatorLocal', 'V') IS NOT NULL
+    DROP VIEW app.vw_DenominatorLocal;
 
 IF OBJECT_ID('stage.DenominatorSnapshot', 'U') IS NOT NULL
     DROP TABLE stage.DenominatorSnapshot;

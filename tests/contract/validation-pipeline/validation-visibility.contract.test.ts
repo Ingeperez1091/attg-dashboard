@@ -28,7 +28,7 @@ async function createUser(
 }
 
 function authHeader(userId: string): Record<string, string> {
-  return { Authorization: `Bearer ${userId}` };
+  return { Cookie: `dev_user_id=${userId}` };
 }
 
 function makeResultsRequest(appId: string, userId: string): Request {

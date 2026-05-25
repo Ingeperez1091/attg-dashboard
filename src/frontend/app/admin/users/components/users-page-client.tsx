@@ -76,9 +76,20 @@ export function UsersPageClient({
     setFormOpen(false);
   }
 
+  async function refreshUsers(): Promise<void> {
+    try {
+      const res = await fetch("/api/admin/users?includeInactive=true");
+      if (!res.ok) return;
+      const body = (await res.json()) as { users: AdminUserDto[] };
+      setUsers(body.users);
+    } catch {
+      // Fallback to full page reload if API call fails
+      window.location.reload();
+    }
+  }
+
   function handleSaved(_userId: string): void {
-    // Refresh to pick up canonical state after create/edit API calls.
-    window.location.reload();
+    refreshUsers();
   }
 
   async function handleToggleActive(userId: string, newIsActive: boolean): Promise<void> {

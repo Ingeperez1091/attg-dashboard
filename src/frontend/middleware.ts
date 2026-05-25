@@ -4,7 +4,7 @@ import { isDevBypassEnabled } from "@/lib/auth/dev-bypass";
 import { appBootTrace } from "@/lib/runtime-trace";
 
 function getOrCreateRequestId(existing?: string | null): string {
-  if (existing && existing.trim()) {
+  if (existing?.trim()) {
     return existing.trim();
   }
 
@@ -32,13 +32,16 @@ function normalizeIisNodePathname(pathname: string): string {
   // IISNode can surface internal named-pipe prefixes such as:
   //   //pipe/<guid>/api/auth/callback/...
   // Normalize these back to application paths before auth routing.
-  const pipePrefix = pathname.match(/^\/\/pipe\/[0-9a-fA-F-]{36}(\/.*)?$/);
+  appBootTrace("middleware:normalize-pathname", { originalPathname: pathname });
+  const pipePrefix = /^\/\/pipe\/[0-9a-fA-F-]{36}(\/.*)?$/.exec(pathname);
   if (pipePrefix) {
+    appBootTrace("middleware:matched-pipe-prefix", { pipePrefix: pipePrefix[0] });
     return pipePrefix[1] || "/";
   }
 
-  const guidPrefix = pathname.match(/^\/[0-9a-fA-F-]{36}(\/.*)?$/);
+  const guidPrefix = /^\/[0-9a-fA-F-]{36}(\/.*)?$/.exec(pathname);
   if (guidPrefix) {
+    appBootTrace("middleware:matched-guid-prefix", { guidPrefix: guidPrefix[0] });
     return guidPrefix[1] || "/";
   }
 
@@ -47,6 +50,7 @@ function normalizeIisNodePathname(pathname: string): string {
 
 export default auth((request) => {
   const normalizedPath = normalizeIisNodePathname(request.nextUrl.pathname);
+  appBootTrace("middleware:incoming-request", { pathname: normalizedPath });
   const requestId = getOrCreateRequestId(request.headers.get("x-request-id"));
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-request-id", requestId);
@@ -64,9 +68,9 @@ export default auth((request) => {
   }
 
   const devBypassEnabled = isDevBypassEnabled();
-  const devBypassUserId = process.env.NODE_ENV !== "production"
-    ? request.cookies.get("dev_user_id")?.value
-    : undefined;
+  const devBypassUserId = process.env.NODE_ENV === "production"
+    ? undefined
+    : request.cookies.get("dev_user_id")?.value;
 
   if (request.auth || (devBypassEnabled && devBypassUserId)) {
     appBootTrace("middleware:allow-authenticated", {

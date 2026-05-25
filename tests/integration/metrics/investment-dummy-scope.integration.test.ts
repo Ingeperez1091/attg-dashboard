@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "@/app/api/metrics/[appId]/route";
 import {
   getRuntimeMetricsRepository,
@@ -6,6 +6,12 @@ import {
   resetRuntimeRepositoriesForTests
 } from "@/infrastructure/persistence/runtime/repositories";
 import { MetricsMemoryRepository } from "@/infrastructure/persistence/memory/MetricsMemoryRepository";
+
+vi.mock("@/auth", () => ({
+  auth: vi.fn()
+}));
+
+const mockedAuth = vi.mocked((await import("@/auth")).auth);
 
 const APP_ID = "10000000-0000-0000-0000-000000000001";
 
@@ -15,6 +21,7 @@ describe("metrics integration - synthetic investment non-production guard", () =
     process.env.USE_INMEMORY_REPOSITORY = "true";
     process.env.DEV_SESSION_USER_ID = "30000000-0000-0000-0000-000000000001";
     resetRuntimeRepositoriesForTests();
+    vi.clearAllMocks();
   });
 
   it("returns forbidden when synthetic context is requested in production mode", async () => {
@@ -30,6 +37,14 @@ describe("metrics integration - synthetic investment non-production guard", () =
     });
     await repositories.roles.assignRole(user.userId, "administrator", "system");
     await repositories.applications.assignAll(user.userId, "system");
+
+    // Mock Auth.js SSO to resolve the user in production mode
+    mockedAuth.mockResolvedValue({
+      user: { email: "prod-admin@example.com" },
+      oid: "aad-oid-prod-admin-001"
+    } as unknown as Awaited<ReturnType<typeof mockedAuth>>);
+
+    await repositories.users.bindAzureAdObjectId(user.userId, "aad-oid-prod-admin-001", "system");
 
     const repo = getRuntimeMetricsRepository();
     if (!(repo instanceof MetricsMemoryRepository)) {
@@ -58,10 +73,7 @@ describe("metrics integration - synthetic investment non-production guard", () =
 
     const response = await GET(
       new Request("http://localhost/api/metrics/" + APP_ID + "?includeSynthetic=true", {
-        method: "GET",
-        headers: {
-          Authorization: "Bearer " + user.userId
-        }
+        method: "GET"
       }),
       { params: Promise.resolve({ appId: APP_ID }) }
     );

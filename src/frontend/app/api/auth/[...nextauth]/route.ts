@@ -6,7 +6,7 @@ import { type NextRequest } from "next/server";
 const { GET: _GET, POST: _POST } = handlers;
 
 function getOrCreateRequestId(existing?: string | null): string {
-	if (existing && existing.trim()) {
+	if (existing?.trim()) {
 		return existing.trim();
 	}
 
@@ -57,12 +57,12 @@ function getNormalizedAuthRequest(request: NextRequest, normalizedPath: string):
 }
 
 function getNormalizedAuthPath(pathname: string): string | null {
-	const guidPrefixed = pathname.match(/^\/[0-9a-fA-F-]{36}(\/api\/auth\/.*)$/);
+	const guidPrefixed = new RegExp(/^\/[0-9a-fA-F-]{36}(\/api\/auth\/.*)$/).exec(pathname);
 	if (guidPrefixed) {
 		return guidPrefixed[1];
 	}
 
-	const pipeGuidPrefixed = pathname.match(/^\/\/pipe\/[0-9a-fA-F-]{36}(\/api\/auth\/.*)$/);
+	const pipeGuidPrefixed = new RegExp(/^\/\/pipe\/[0-9a-fA-F-]{36}(\/api\/auth\/.*)$/).exec(pathname);
 	if (pipeGuidPrefixed) {
 		return pipeGuidPrefixed[1];
 	}

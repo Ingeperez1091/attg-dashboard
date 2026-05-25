@@ -8,6 +8,12 @@ import {
 } from "@/infrastructure/persistence/runtime/repositories";
 import { requireFilterReadScope } from "@/infrastructure/middleware/filterAuthorizationMiddleware";
 import { DenominatorFilterService } from "@/core/application/services/DenominatorFilterService";
+import {
+  createOperationContext,
+  logOperationStart,
+  logOperationSuccess,
+  logOperationError
+} from "@/lib/api/operation-logger";
 
 function toContractError(error: unknown): { error: string; message: string } {
   const status = toStatusCode(error);
@@ -27,6 +33,9 @@ export async function GET(
   context: { params: Promise<{ appId: string }> }
 ): Promise<Response> {
   const repositories = getRuntimeRepositories();
+  const opCtx = createOperationContext(request);
+  logOperationStart(opCtx);
+  const start = Date.now();
 
   try {
     const { appId } = await context.params;
@@ -40,8 +49,11 @@ export async function GET(
     );
     const entries = await service.getAuditHistory(appId);
 
+    logOperationSuccess(opCtx, 200, Date.now() - start);
     return Response.json({ entries }, { status: 200 });
   } catch (error: unknown) {
-    return Response.json(toContractError(error), { status: toStatusCode(error) });
+    const status = toStatusCode(error);
+    logOperationError(opCtx, error, status, Date.now() - start);
+    return Response.json(toContractError(error), { status });
   }
 }

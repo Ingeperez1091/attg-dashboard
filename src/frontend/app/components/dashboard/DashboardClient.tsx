@@ -23,7 +23,7 @@ function toFilterOptions(response: DashboardUsageResponseDto | null): string[] {
 }
 
 async function fetchDashboardUsage(subServiceLine?: string): Promise<DashboardUsageResponseDto> {
-  const url = new URL("/api/dashboard/usage", window.location.origin);
+  const url = new URL("/api/dashboard/usage", globalThis.location.origin);
   if (subServiceLine && subServiceLine !== ALL_FILTER) {
     url.searchParams.set("subServiceLine", subServiceLine);
   }
@@ -34,8 +34,8 @@ async function fetchDashboardUsage(subServiceLine?: string): Promise<DashboardUs
   });
 
   if (response.status === 401) {
-    const returnUrl = `${window.location.pathname}${window.location.search}`;
-    window.location.href = `/login?returnUrl=${encodeURIComponent(returnUrl)}`;
+    const returnUrl = `${globalThis.location.pathname}${globalThis.location.search}`;
+    globalThis.location.href = `/login?returnUrl=${encodeURIComponent(returnUrl)}`;
     throw new Error("UNAUTHORIZED");
   }
 

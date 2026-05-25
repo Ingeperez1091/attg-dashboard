@@ -50,7 +50,7 @@ describe("US5 integration - admin route protection", () => {
 
     const request = new Request("http://localhost/admin/users", {
       headers: {
-        Authorization: "Bearer " + userId
+        Cookie: "dev_user_id=" + userId
       }
     });
 
@@ -64,7 +64,7 @@ describe("US5 integration - admin route protection", () => {
 
     const request = new Request("http://localhost/admin/users", {
       headers: {
-        Authorization: "Bearer " + userId
+        Cookie: "dev_user_id=" + userId
       }
     });
 

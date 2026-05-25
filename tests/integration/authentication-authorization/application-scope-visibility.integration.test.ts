@@ -73,7 +73,7 @@ describe("integration - application scoped visibility", () => {
     const usageResponse = await getDashboardUsage(
       new Request("http://localhost/api/dashboard/usage", {
         method: "GET",
-        headers: { Authorization: `Bearer ${ownerUserId}` }
+        headers: { Cookie: `dev_user_id=${ownerUserId}` }
       })
     );
 
@@ -92,7 +92,7 @@ describe("integration - application scoped visibility", () => {
     const response = await getApplicationModel(
       new Request(`http://localhost/api/applications/${unassignedAppId}/numeratormodel`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${ownerUserId}` }
+        headers: { Cookie: `dev_user_id=${ownerUserId}` }
       }),
       { params: Promise.resolve({ appId: unassignedAppId }) }
     );
@@ -102,7 +102,7 @@ describe("integration - application scoped visibility", () => {
     const assignedResponse = await getApplicationModel(
       new Request(`http://localhost/api/applications/${assignedAppId}/numeratormodel`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${ownerUserId}` }
+        headers: { Cookie: `dev_user_id=${ownerUserId}` }
       }),
       { params: Promise.resolve({ appId: assignedAppId }) }
     );

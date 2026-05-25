@@ -19,7 +19,7 @@ describe("integration - audit identity propagation", () => {
       new Request("http://localhost/api/admin/users", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${adminUserId}`,
+          Cookie: `dev_user_id=${adminUserId}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({

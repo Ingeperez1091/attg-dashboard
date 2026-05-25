@@ -15,6 +15,18 @@ BEGIN
         UpdatedBy NVARCHAR(255) NOT NULL CONSTRAINT DF_DenominatorModels_UpdatedBy DEFAULT (SUSER_SNAME()),
         CONSTRAINT UQ_DenominatorModels_FieldName UNIQUE (FieldName),
         CONSTRAINT CK_DenominatorModels_FieldType CHECK (FieldType IN ('text', 'numeric', 'date')),
-        CONSTRAINT CK_DenominatorModels_DisplayOrder CHECK (DisplayOrder >= 1)
+        CONSTRAINT CK_DenominatorModels_DisplayOrder CHECK (DisplayOrder >= 1),
+        CONSTRAINT CK_DenominatorModels_SourceColumn_SafeIdentifier CHECK (
+            LEN(SourceColumn) >= 3
+            AND LEFT(SourceColumn, 1) = '['
+            AND RIGHT(SourceColumn, 1) = ']'
+            AND SUBSTRING(SourceColumn, 2, LEN(SourceColumn) - 2) LIKE '[A-Za-z_]%'
+            AND SUBSTRING(SourceColumn, 2, LEN(SourceColumn) - 2) NOT LIKE '%[^A-Za-z0-9_]%'
+        ),
+        CONSTRAINT CK_DenominatorModels_FieldName_SafeIdentifier CHECK (
+            LEN(FieldName) >= 1
+            AND FieldName LIKE '[A-Za-z_]%'
+            AND FieldName NOT LIKE '%[^A-Za-z0-9_]%'
+        )
     );
 END;

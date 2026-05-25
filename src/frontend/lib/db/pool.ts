@@ -9,12 +9,30 @@ type SqlAuthPoolConfig = {
   user: string;
   password: string;
   port?: number;
+  requestTimeout?: number;
   options?: {
     encrypt?: boolean;
     trustServerCertificate?: boolean;
     instanceName?: string;
   };
 };
+
+/**
+ * Resolves the SQL request timeout from environment or returns a safe default.
+ * The default mssql requestTimeout is 15000ms which is too short for stored
+ * procedures like usp_ExecutePipelineRun (can take 20-60s with large datasets).
+ */
+function resolveRequestTimeout(): number {
+  const envValue = getEnvValue("SQL_REQUEST_TIMEOUT_MS")?.trim();
+  if (envValue) {
+    const parsed = Number.parseInt(envValue, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  // Default: 120 seconds (sufficient for pipeline SP execution)
+  return 120_000;
+}
 
 function getEnvValue(key: string): string | undefined {
   const direct = process.env[key];
@@ -170,7 +188,8 @@ function buildSqlAuthPoolConfigFromSqlEnv(): SqlAuthPoolConfig | null {
     database,
     user,
     password,
-    ...(port !== undefined ? { port } : {}),
+    requestTimeout: resolveRequestTimeout(),
+    ...(port === undefined ? {} : { port }),
     ...(Object.keys(options).length > 0 ? { options } : {})
   };
 }
@@ -204,8 +223,11 @@ function resolveConnectionString(): string {
 }
 
 async function connectWithResolvedDriver(connectionString: string, trustedConnection: boolean): Promise<ConnectionPool> {
+  const timeout = resolveRequestTimeout();
   if (!trustedConnection) {
-    const pool = new ConnectionPool(connectionString);
+    const parsedConfig = ConnectionPool.parseConnectionString(connectionString);
+    parsedConfig.requestTimeout = timeout;
+    const pool = new ConnectionPool(parsedConfig);
     return pool.connect();
   }
 
@@ -215,7 +237,9 @@ async function connectWithResolvedDriver(connectionString: string, trustedConnec
     const importDynamic = new Function("m", "return import(m)") as (m: string) => Promise<unknown>;
     const sql = await importDynamic(moduleName);
     const MsNodePool = (sql as { ConnectionPool: typeof ConnectionPool }).ConnectionPool;
-    const pool = new MsNodePool(connectionString);
+    const parsedConfig = MsNodePool.parseConnectionString(connectionString);
+    parsedConfig.requestTimeout = timeout;
+    const pool = new MsNodePool(parsedConfig);
     return pool.connect();
   } catch {
     throw new Error(
@@ -268,7 +292,7 @@ export function getSqlConnectionPool(): Promise<ConnectionPool> {
     });
   }
 
-  return poolPromise as Promise<ConnectionPool>;
+  return poolPromise;
 }
 
 /**

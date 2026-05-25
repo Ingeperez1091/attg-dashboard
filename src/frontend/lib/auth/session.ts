@@ -1,6 +1,5 @@
 import { AppError } from "@/lib/api/error-handler";
 import { RepositoryBundle } from "@/core/domain/repositories/RepositoryBundle";
-import { RoleName } from "@/core/domain/entities/Role";
 import { SessionEntity as SessionUser } from "@/core/domain/entities/SessionEntity";
 import { assertCanonicalRole } from "@/lib/auth/authorization";
 import { logSsoIdentityBindSuccess } from "@/lib/api/audit-logger";
@@ -34,19 +33,6 @@ function logSsoDebug(message: string, context?: Record<string, unknown>): void {
   }
 
   console.info(`[auth:sso] ${message}`);
-}
-
-function parseBearerUserId(authorizationHeader: string | null): string | null {
-  if (!authorizationHeader) {
-    return null;
-  }
-
-  const [scheme, value] = authorizationHeader.split(" ");
-  if (scheme?.toLowerCase() !== "bearer" || !value) {
-    return null;
-  }
-
-  return value.trim();
 }
 
 function parseCookieValue(cookieHeader: string | null, name: string): string | null {
@@ -86,7 +72,7 @@ async function resolveFromRepositories(userId: string, repositories: RepositoryB
   }
 
   const role = await repositories.roles.getRoleByUserId(userId);
-  const effectiveRole = (role ?? "viewer") as string;
+  const effectiveRole: string = role ?? "viewer";
   assertCanonicalRole(effectiveRole);
 
   const applications = await repositories.userApplications.listByUserId(userId);
@@ -100,7 +86,7 @@ async function resolveFromRepositories(userId: string, repositories: RepositoryB
 
   return {
     userId,
-    role: effectiveRole as RoleName,
+    role: effectiveRole,
     isActive: user.isActive,
     applications
   };
@@ -240,22 +226,21 @@ export async function getOptionalSession(
     }
   }
 
-  const bearerUserId = parseBearerUserId(request.headers.get("Authorization"));
-  const cookieUserId = !devBypassEnabled
-    ? null
-    : parseCookieValue(request.headers.get("Cookie"), "dev_user_id");
+  const cookieUserId = devBypassEnabled
+    ? parseCookieValue(request.headers.get("Cookie"), "dev_user_id")
+    : null;
   const envUserId = devBypassEnabled ? process.env.DEV_SESSION_USER_ID : undefined;
-  const userId = bearerUserId ?? cookieUserId ?? envUserId ?? null;
+  const userId = cookieUserId ?? envUserId ?? null;
 
   if (!userId) {
-    logSsoDebug("No fallback user identifier available (bearer/cookie/env).", {
+    logSsoDebug("No fallback user identifier available (cookie/env).", {
       devBypassEnabled
     });
     appBootTrace("session:getOptionalSession:no-user-id");
     return null;
   }
 
-  if (devBypassEnabled && !bearerUserId && !cookieUserId && envUserId) {
+  if (devBypassEnabled && !cookieUserId && envUserId) {
     logSsoDebug("Resolved seeded dev bypass session from DEV_SESSION_USER_ID.", {
       userId: mask(envUserId)
     });

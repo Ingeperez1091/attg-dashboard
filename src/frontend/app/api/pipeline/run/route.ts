@@ -4,16 +4,31 @@ import { toPublicContractError, toStatusCode } from "@/lib/api/error-handler";
 import { requireActive } from "@/lib/auth/guards";
 import { getRuntimeADFPipelineClient, getRuntimeRepositories, getRuntimeValidationPipelineRepository } from "@/infrastructure/persistence/runtime/repositories";
 import { triggerPipelineRequestSchema } from "@/infrastructure/validation/pipelineSchemas";
+import {
+  createOperationContext,
+  logOperationStart,
+  logOperationError,
+  logOperationValidationFailure
+} from "@/lib/api/operation-logger";
 
 export async function POST(request: Request): Promise<Response> {
   const repositories = getRuntimeRepositories();
+  const opCtx = createOperationContext(request);
+  logOperationStart(opCtx);
+  const start = Date.now();
 
   try {
     const session = await requireActive(request, repositories);
+    opCtx.callerUserId = session.userId;
     const body = await request.json().catch(() => null);
     const parsed = triggerPipelineRequestSchema.safeParse(body);
 
     if (!parsed.success) {
+      const failures = parsed.error.errors.map((e) => ({
+        field: e.path.join(".") || "request",
+        message: e.message
+      }));
+      logOperationValidationFailure(opCtx, failures);
       return Response.json({ error: "VALIDATION_ERROR", message: "Invalid request body." }, { status: 400 });
     }
 
@@ -44,6 +59,8 @@ export async function POST(request: Request): Promise<Response> {
       { status: 201 }
     );
   } catch (error: unknown) {
-    return Response.json(toPublicContractError(error), { status: toStatusCode(error) });
+    const status = toStatusCode(error);
+    logOperationError(opCtx, error, status, Date.now() - start);
+    return Response.json(toPublicContractError(error), { status });
   }
 }

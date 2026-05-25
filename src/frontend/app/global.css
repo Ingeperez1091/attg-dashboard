@@ -111,21 +111,33 @@ textarea {
 }
 
 .page-title {
-  margin: 0;
   padding-bottom: var(--motif-spacing-4, 16px);
-  font-size: var(--motif-typography-heading-md-size, 1.5rem);
+  font-size: var(--motif-typography-heading-md-size, 1.3rem);
   line-height: var(--motif-typography-heading-md-line-height, 2rem);
   color: var(--app-text-primary);
+  font-weight: 700;
+  margin: 0 0 1.5rem;
 }
 
 .tabs-nav {
   padding-bottom: var(--motif-spacing-4, 16px);
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--app-surface-raised);
+  border-bottom: 1px solid var(--app-border);
 }
 
 .tab-link {
   display: inline-block;
+  padding: 0.75rem 1.1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--app-text-secondary);
   text-decoration: none;
-  color: inherit;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
 }
 
 .panel {
@@ -294,27 +306,6 @@ tbody tr:hover {
 }
 
 /* ── Navigation tabs ──────────────────────────────── */
-.tabs-nav {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  padding: 0 1.5rem;
-  background: var(--app-surface-raised);
-  border-bottom: 1px solid var(--app-border);
-}
-
-.tab-link {
-  display: inline-block;
-  padding: 0.75rem 1.1rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--app-text-secondary);
-  text-decoration: none;
-  border-bottom: 2px solid transparent;
-  transition: color 0.15s, border-color 0.15s;
-  white-space: nowrap;
-}
-
 .tab-link:hover {
   color: var(--app-brand);
   border-bottom-color: var(--app-brand);
@@ -325,20 +316,6 @@ tbody tr:hover {
   color: var(--app-brand);
   border-bottom-color: var(--app-brand);
   font-weight: 600;
-}
-
-/* ── Page structure ───────────────────────────────── */
-.page-content-inner {
-  width: min(1440px, calc(100% - 20px));
-  margin: 0 auto;
-  padding: 28px 0 44px;
-}
-
-.page-title {
-  font-size: clamp(1.7rem, 2.4vw, 2.15rem);
-  font-weight: 700;
-  margin: 0 0 1.5rem;
-  color: var(--app-text-primary);
 }
 
 /* ── Breadcrumb ───────────────────────────────────── */
@@ -358,6 +335,11 @@ tbody tr:hover {
 
 .breadcrumb__sep {
   opacity: 0.5;
+}
+
+.table-scroll-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ── Cards ────────────────────────────────────────── */
@@ -1053,7 +1035,7 @@ select.form-input:disabled,
   align-items: center;
   gap: 2rem;
   padding: 0 1.5rem;
-  height: 4rem;
+  height: 3.5rem;
 }
 
 .navbar-brand {
@@ -1085,12 +1067,12 @@ select.form-input:disabled,
 .navbar-link {
   display: inline-flex;
   align-items: center;
-  gap: 0.62rem;
+  gap: 0.25rem;
   text-decoration: none;
   color: var(--app-text-secondary);
-  font-size: 1.12rem;
-  font-weight: 700;
-  padding: 0.62rem 1rem;
+  font-size: 1.0rem;
+  font-weight: 400;
+  padding: 0.5rem 1rem;
   border-radius: 12px;
   transition: background 0.15s, color 0.15s;
   white-space: nowrap;

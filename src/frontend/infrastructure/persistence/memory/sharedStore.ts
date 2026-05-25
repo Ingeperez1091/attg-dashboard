@@ -46,9 +46,7 @@ export function createStoreAccessor<T>(options: StoreAccessorOptions<T>): StoreA
     }
 
     const globalStore = globalThis as typeof globalThis & Record<string, T | undefined>;
-    if (!globalStore[options.globalKey]) {
-      globalStore[options.globalKey] = options.createEmptyStore();
-    }
+    globalStore[options.globalKey] ??= options.createEmptyStore();
 
     return globalStore[options.globalKey] as T;
   }

@@ -1,0 +1,26 @@
+{
+  "name": "LS_Mercury_ExternalSQL",
+  "properties": {
+    "description": "Connection to external Mercury SQL Server hosting the denominator view vw_USTaxBTS_FY26_MaxACD.",
+    "type": "SqlServer",
+    "typeProperties": {
+      "connectionString": {
+        "type": "AzureKeyVaultSecret",
+        "store": {
+          "referenceName": "LS_KeyVault",
+          "type": "LinkedServiceReference"
+        },
+        "secretName": "MercuryExternalSqlConnectionString"
+      }
+    },
+    "connectVia": {
+      "referenceName": "IR_SelfHosted_OnPrem",
+      "type": "IntegrationRuntimeReference"
+    },
+    "annotations": [
+      "external",
+      "mercury",
+      "denominator-source"
+    ]
+  }
+}

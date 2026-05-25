@@ -1,0 +1,60 @@
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Dev@12345678"
+      MSSQL_PID: Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqldata:/var/opt/mssql
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "Dev@12345678" -C -Q "SELECT 1" -b
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  db-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./database/migrations:/migrations:ro
+      - ./scripts/docker/init-db.sh:/init-db.sh:ro
+    entrypoint: /bin/bash
+    command: /init-db.sh
+    environment:
+      SQL_SERVER: db
+      SQL_DATABASE: ATTG_Usage4
+      SA_PASSWORD: "Dev@12345678"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      USE_INMEMORY_REPOSITORY: "false"
+      SQL_SERVER: db
+      SQL_PORT: "1433"
+      SQL_DATABASE: ATTG_Usage4
+      SQL_USER: sa
+      SQL_PASSWORD: "Dev@12345678"
+      SQL_ENCRYPT: "false"
+      SQL_TRUST_SERVER_CERT: "true"
+      TRUSTED_CONNECTION: "false"
+      DEV_SESSION_USER_ID: "30000000-0000-0000-0000-000000000001"
+      AUTH_URL: http://localhost:3000
+      AUTH_SECRET: local-dev-secret-change-me
+      PIPELINE_EXECUTION_MODE: local
+      NODE_ENV: development
+
+volumes:
+  sqldata:

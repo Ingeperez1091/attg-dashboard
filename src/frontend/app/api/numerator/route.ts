@@ -3,6 +3,13 @@ import { requireActive } from "@/lib/auth/guards";
 import { numeratorIngestionRequestSchema } from "@/lib/validation/numeratorIngestionSchema";
 import { NumeratorIngestionService } from "@/core/application/services/numeratorIngestionService";
 import { getNumeratorIngestionDependencies } from "@/infrastructure/persistence/runtime/repositories";
+import {
+  createOperationContext,
+  logOperationStart,
+  logOperationSuccess,
+  logOperationError,
+  logOperationValidationFailure
+} from "@/lib/api/operation-logger";
 
 interface ContractErrorResponse {
   error: string;
@@ -49,21 +56,27 @@ async function parseRequestBody(request: Request): Promise<unknown> {
 
 export async function POST(request: Request): Promise<Response> {
   const { repositories, ingestionRepository } = getNumeratorIngestionDependencies();
+  const opCtx = createOperationContext(request);
+  logOperationStart(opCtx);
+  const start = Date.now();
 
   try {
     const session = await requireActive(request, repositories);
+    opCtx.callerUserId = session.userId;
     const body = await parseRequestBody(request);
     const parsed = numeratorIngestionRequestSchema.safeParse(body);
 
     if (!parsed.success) {
       const details: Record<string, string> = {};
-      for (const issue of parsed.error.issues) {
+      const failures = parsed.error.issues.map((issue) => {
         const key = issue.path.join(".") || "request";
         if (!details[key]) {
           details[key] = issue.message;
         }
-      }
+        return { field: key, message: issue.message };
+      });
 
+      logOperationValidationFailure(opCtx, failures);
       return Response.json(toContractError(new AppError(400, "VALIDATION_ERROR", "Invalid request body."), details), {
         status: 400
       });
@@ -72,9 +85,11 @@ export async function POST(request: Request): Promise<Response> {
     const service = new NumeratorIngestionService(ingestionRepository, repositories);
     const result = await service.submit(parsed.data, session);
 
+    logOperationSuccess(opCtx, 201, Date.now() - start);
     return Response.json(result, { status: 201 });
   } catch (error: unknown) {
     const status = toStatusCode(error);
+    logOperationError(opCtx, error, status, Date.now() - start);
     const body = toContractError(error);
     return Response.json(body, { status });
   }

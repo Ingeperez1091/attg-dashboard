@@ -67,7 +67,7 @@ describe("Phase 8 integration - error scenarios", () => {
     const response = await listUsers(
       new Request("http://localhost/api/admin/users", {
         method: "GET",
-        headers: { Authorization: "Bearer " + userId }
+        headers: { Cookie: "dev_user_id=" + userId }
       })
     );
 

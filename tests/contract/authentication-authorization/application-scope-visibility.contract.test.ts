@@ -22,7 +22,7 @@ describe("contract - application scope visibility", () => {
     const assignedFilterResponse = await getNumeratorFilters(
       new Request(`http://localhost/api/filters/numerator/${assignedAppId}`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${ownerUserId}` }
+        headers: { Cookie: `dev_user_id=${ownerUserId}` }
       }),
       { params: Promise.resolve({ appId: assignedAppId }) }
     );
@@ -30,7 +30,7 @@ describe("contract - application scope visibility", () => {
     const unassignedFilterResponse = await getNumeratorFilters(
       new Request(`http://localhost/api/filters/numerator/${unassignedAppId}`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${ownerUserId}` }
+        headers: { Cookie: `dev_user_id=${ownerUserId}` }
       }),
       { params: Promise.resolve({ appId: unassignedAppId }) }
     );
@@ -38,7 +38,7 @@ describe("contract - application scope visibility", () => {
     const unassignedMetricsResponse = await getMetrics(
       new Request(`http://localhost/api/metrics/${unassignedAppId}`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${ownerUserId}` }
+        headers: { Cookie: `dev_user_id=${ownerUserId}` }
       }),
       { params: Promise.resolve({ appId: unassignedAppId }) }
     );
@@ -47,7 +47,7 @@ describe("contract - application scope visibility", () => {
       new Request("http://localhost/api/pipeline/run", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${ownerUserId}`,
+          Cookie: `dev_user_id=${ownerUserId}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({ applicationId: unassignedAppId })
@@ -57,7 +57,7 @@ describe("contract - application scope visibility", () => {
     const unassignedValidationSummaryResponse = await getValidationSummary(
       new Request(`http://localhost/api/pipeline/validation-results/${unassignedAppId}/summary`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${ownerUserId}` }
+        headers: { Cookie: `dev_user_id=${ownerUserId}` }
       }),
       { params: Promise.resolve({ appId: unassignedAppId }) }
     );

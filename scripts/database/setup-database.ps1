@@ -3,6 +3,9 @@ param(
     [string]$Instance = ".\SQLEXPRESS",
 
     [string]$Database = "ATTG_Usage",
+    [string]$ConnectionString,
+    [string]$Username,
+    [string]$Password,
     [string]$SqlCmdPath = "C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\180\Tools\Binn\SQLCMD.EXE",
     [switch]$UseTrustedConnection = $true,
     [switch]$TrustServerCertificate = $true,
@@ -19,6 +22,60 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\.." )).Path
+
+function Resolve-ConnectionSettings {
+    if (-not $ConnectionString) {
+        return
+    }
+
+    $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($ConnectionString)
+
+    if (-not $PSBoundParameters.ContainsKey("Server") -and -not [string]::IsNullOrWhiteSpace($builder.DataSource)) {
+        $script:Server = $builder.DataSource
+    }
+
+    if (-not $PSBoundParameters.ContainsKey("Instance") -and -not [string]::IsNullOrWhiteSpace($builder.DataSource)) {
+        $script:Instance = $builder.DataSource
+    }
+
+    if (-not $PSBoundParameters.ContainsKey("Database") -and -not [string]::IsNullOrWhiteSpace($builder.InitialCatalog)) {
+        $script:Database = $builder.InitialCatalog
+    }
+
+    if ($builder.IntegratedSecurity) {
+        $script:UseTrustedConnection = $true
+    } elseif (-not [string]::IsNullOrWhiteSpace($builder.UserID) -and -not [string]::IsNullOrWhiteSpace($builder.Password)) {
+        if (-not $PSBoundParameters.ContainsKey("Username")) {
+            $script:Username = $builder.UserID
+        }
+        if (-not $PSBoundParameters.ContainsKey("Password")) {
+            $script:Password = $builder.Password
+        }
+        $script:UseTrustedConnection = $false
+    }
+
+    if ($builder.ContainsKey("TrustServerCertificate") -and -not $PSBoundParameters.ContainsKey("TrustServerCertificate")) {
+        $script:TrustServerCertificate = [bool]$builder.TrustServerCertificate
+    }
+}
+
+function Validate-AuthenticationSettings {
+    if ($UseTrustedConnection -and ($PSBoundParameters.ContainsKey("Username") -or $PSBoundParameters.ContainsKey("Password"))) {
+        throw "Specify either trusted auth (-UseTrustedConnection) or SQL auth (-Username/-Password), not both."
+    }
+
+    if (($PSBoundParameters.ContainsKey("Username") -and -not $PSBoundParameters.ContainsKey("Password")) -or
+        ($PSBoundParameters.ContainsKey("Password") -and -not $PSBoundParameters.ContainsKey("Username"))) {
+        throw "Both -Username and -Password are required together for SQL authentication."
+    }
+
+    if ($Credential -and (-not $UseTrustedConnection)) {
+        throw "-Credential can only be used with trusted Windows authentication."
+    }
+}
+
+Resolve-ConnectionSettings
+Validate-AuthenticationSettings
 
 function Resolve-RepoPath([string]$RelativePath) {
     return (Resolve-Path (Join-Path $RepoRoot $RelativePath)).Path
@@ -178,7 +235,9 @@ for ($i = 1; $i -le 15; $i++) {
 
 function Initialize-Database {
     Write-Info "Ensuring database [$Database] exists..."
-    Invoke-SqlCmd -Arguments ($sqlcmdFlags + @("-Q", "IF DB_ID('$Database') IS NULL CREATE DATABASE [$Database];")) -Context "create database"
+    $escapedDatabaseName = $Database.Replace("'", "''").Replace("]", "]]")
+    $createDatabaseQuery = "IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'$escapedDatabaseName') CREATE DATABASE [$escapedDatabaseName];"
+    Invoke-SqlCmd -Arguments ($sqlcmdFlags + @("-d", "master", "-Q", $createDatabaseQuery)) -Context "create database"
 }
 
 function Invoke-DeploymentScripts {
@@ -273,6 +332,8 @@ Initialize-Instance
 $script:sqlcmdFlags = @("-S", $Server)
 if ($UseTrustedConnection) {
     $script:sqlcmdFlags += "-E"
+} elseif (-not [string]::IsNullOrWhiteSpace($Username) -and -not [string]::IsNullOrWhiteSpace($Password)) {
+    $script:sqlcmdFlags += @("-U", $Username, "-P", $Password)
 }
 
 if ($TrustServerCertificate) {

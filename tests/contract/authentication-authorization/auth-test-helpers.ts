@@ -36,6 +36,10 @@ export async function createSessionUser(options: SessionUserOptions): Promise<st
   return user.userId;
 }
 
+/**
+ * Returns headers that authenticate via the dev_user_id cookie.
+ * Only works when dev bypass is enabled (NODE_ENV !== "production").
+ */
 export function bearerHeaders(userId: string): HeadersInit {
-  return { Authorization: `Bearer ${userId}` };
+  return { Cookie: `dev_user_id=${userId}` };
 }

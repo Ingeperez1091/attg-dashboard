@@ -3,7 +3,7 @@ import { isDevBypassEnabled } from "@/lib/auth/dev-bypass";
 import { cookies } from "next/headers";
 
 interface LoginPageProps {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  readonly searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 function getReturnUrl(rawValue: string | string[] | undefined): string {
