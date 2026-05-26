@@ -2,13 +2,13 @@ import { Spinner } from "@/app/components/Spinner";
 import { resolveUserDisplayName, UserDirectoryEntry } from "@/app/components/hooks/useUserAuditMetadata";
 import { DenominatorRuleViewDto } from "@/core/application/dto/denominator/DenominatorFilterDto";
 
-type DenominatorRuleListProps = {
+type DenominatorRuleListProps = Readonly<{
   rules: DenominatorRuleViewDto[];
   loading?: boolean;
   lastUpdatedAt?: string | null;
   lastUpdatedBy?: string | null;
   userDirectory?: UserDirectoryEntry[];
-};
+}>;
 
 export function DenominatorRuleList({
   rules,
@@ -30,6 +30,7 @@ export function DenominatorRuleList({
   return (
     <section className="card">
       <h2 className="card__title">Denominator Rules</h2>
+      <div className="table-scroll-wrap">
       <table>
         <thead>
           <tr>
@@ -52,6 +53,7 @@ export function DenominatorRuleList({
           ))}
         </tbody>
       </table>
+      </div>
       {lastUpdatedAt && (
         <p>
           Last updated: {new Date(lastUpdatedAt).toLocaleString()} by {displayName}

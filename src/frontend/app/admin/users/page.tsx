@@ -14,6 +14,7 @@ async function mapAdminUsers(container: ReturnType<typeof getContainer>, users: 
 
       return {
         userId: user.userId,
+        username: user.username,
         email: user.email,
         displayName: user.displayName,
         azureAdObjectId: user.azureAdObjectId,

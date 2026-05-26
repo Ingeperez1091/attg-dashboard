@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { GET, PUT } from "@/app/api/filters/numerator/[appId]/route";
-import { getRuntimeRepositories, resetRuntimeRepositoriesForTests } from "@/infrastructure/persistence/runtime/repositories";
-import { resetRuntimeNumeratorFilterRepositoryForTests } from "@/infrastructure/persistence/runtime/repositories";
+import { getRuntimeRepositories, 
+  resetRuntimeRepositoriesForTests , 
+  resetRuntimeNumeratorFilterRepositoryForTests } from "@/infrastructure/persistence/runtime/repositories";
+
 
 async function createSessionUser(
   role: "administrator" | "application_owner" | "viewer",
@@ -47,7 +49,7 @@ describe("integration - numerator filter authorization", () => {
     const response = await PUT(new Request(`http://localhost/api/filters/numerator/${appId}`, {
       method: "PUT",
       headers: {
-        Authorization: `Bearer ${viewerUserId}`,
+        Cookie: `dev_user_id=${viewerUserId}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -70,7 +72,7 @@ describe("integration - numerator filter authorization", () => {
     const response = await PUT(new Request(`http://localhost/api/filters/numerator/${appId}`, {
       method: "PUT",
       headers: {
-        Authorization: `Bearer ${ownerUserId}`,
+        Cookie: `dev_user_id=${ownerUserId}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({

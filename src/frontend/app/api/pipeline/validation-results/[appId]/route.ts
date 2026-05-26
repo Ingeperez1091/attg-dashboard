@@ -3,6 +3,12 @@ import { AppError, toStatusCode } from "@/lib/api/error-handler";
 import { requireActive } from "@/lib/auth/guards";
 import { getRuntimeRepositories, getRuntimeValidationPipelineRepository } from "@/infrastructure/persistence/runtime/repositories";
 import { validationResultsQuerySchema } from "@/infrastructure/validation/pipelineSchemas";
+import {
+  createOperationContext,
+  logOperationStart,
+  logOperationError,
+  logOperationValidationFailure
+} from "@/lib/api/operation-logger";
 
 function toContractError(error: unknown): { error: string; message: string } {
   if (error instanceof AppError) {
@@ -17,9 +23,13 @@ export async function GET(
   context: { params: Promise<{ appId: string }> }
 ): Promise<Response> {
   const repositories = getRuntimeRepositories();
+  const opCtx = createOperationContext(request);
+  logOperationStart(opCtx);
+  const start = Date.now();
 
   try {
     const session = await requireActive(request, repositories);
+    opCtx.callerUserId = session.userId;
     const { appId } = await context.params;
 
     const activeApplications = await repositories.applications.listActive();
@@ -38,6 +48,7 @@ export async function GET(
 
     const parsed = validationResultsQuerySchema.safeParse(rawQuery);
     if (!parsed.success) {
+      logOperationValidationFailure(opCtx, [{ field: "query", message: "Invalid query parameters." }]);
       return Response.json({ error: "VALIDATION_ERROR", message: "Invalid query parameters." }, { status: 400 });
     }
 
@@ -69,6 +80,8 @@ export async function GET(
       { status: 200 }
     );
   } catch (error: unknown) {
-    return Response.json(toContractError(error), { status: toStatusCode(error) });
+    const status = toStatusCode(error);
+    logOperationError(opCtx, error, status, Date.now() - start);
+    return Response.json(toContractError(error), { status });
   }
 }

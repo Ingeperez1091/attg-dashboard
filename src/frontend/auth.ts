@@ -37,8 +37,8 @@ function parseJwtPayload(jwt: string | null | undefined): Record<string, unknown
   }
 
   const payload = parts[1]
-    .replace(/-/g, "+")
-    .replace(/_/g, "/")
+    .replaceAll("-", "+")
+    .replaceAll("_", "/")
     .padEnd(Math.ceil(parts[1].length / 4) * 4, "=");
 
   try {
@@ -52,6 +52,95 @@ function parseJwtPayload(jwt: string | null | undefined): Record<string, unknown
   }
 
   return null;
+}
+
+function hasNoString(value: unknown): boolean {
+  return typeof value !== "string" || !String(value).trim();
+}
+
+function resolveOidFromProfile(tokenRecord: Record<string, unknown>, profile: unknown): void {
+  if (!profile) return;
+  const profileRecord = profile as Record<string, unknown>;
+  const oid = firstString(profileRecord.oid, profileRecord.sub);
+  if (oid) {
+    tokenRecord.oid = oid;
+  }
+}
+
+function resolveEmailFromProfile(token: Record<string, unknown>, profile: unknown): void {
+  if (!profile) return;
+  if (!hasNoString(token.email)) return;
+  const profileRecord = profile as Record<string, unknown>;
+  const resolvedEmail = firstString(
+    profileRecord.email,
+    profileRecord.preferred_username,
+    profileRecord.upn,
+    profileRecord.unique_name,
+  );
+  if (resolvedEmail) {
+    token.email = resolvedEmail.toLowerCase();
+  }
+}
+
+function resolveOidFallback(
+  tokenRecord: Record<string, unknown>,
+  token: Record<string, unknown>,
+  account: { providerAccountId?: string } | null | undefined,
+): void {
+  if (!hasNoString(tokenRecord.oid)) return;
+  const resolvedOid = firstString(token.sub, account?.providerAccountId);
+  if (resolvedOid) {
+    tokenRecord.oid = resolvedOid;
+  }
+}
+
+function resolveEmailFallback(
+  token: Record<string, unknown>,
+  tokenRecord: Record<string, unknown>,
+  user: { email?: string | null } | undefined,
+): void {
+  if (!hasNoString(token.email)) return;
+  const resolvedEmail = firstString(
+    user?.email,
+    token.email,
+    tokenRecord.preferred_username,
+    tokenRecord.upn,
+    tokenRecord.unique_name,
+  );
+  if (resolvedEmail) {
+    token.email = resolvedEmail.toLowerCase();
+  }
+}
+
+function resolveFromIdToken(
+  tokenRecord: Record<string, unknown>,
+  token: Record<string, unknown>,
+  accountRecord: Record<string, unknown> | null,
+): void {
+  if (!hasNoString(tokenRecord.oid) && !hasNoString(token.email)) return;
+
+  const idToken = firstString(accountRecord?.id_token, tokenRecord.id_token);
+  const idTokenPayload = parseJwtPayload(idToken);
+  if (!idTokenPayload) return;
+
+  if (hasNoString(tokenRecord.oid)) {
+    const payloadOid = firstString(idTokenPayload.oid, idTokenPayload.sub, idTokenPayload.objectid);
+    if (payloadOid) {
+      tokenRecord.oid = payloadOid;
+    }
+  }
+
+  if (hasNoString(token.email)) {
+    const payloadEmail = firstString(
+      idTokenPayload.email,
+      idTokenPayload.preferred_username,
+      idTokenPayload.upn,
+      idTokenPayload.unique_name,
+    );
+    if (payloadEmail) {
+      token.email = payloadEmail.toLowerCase();
+    }
+  }
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -81,84 +170,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const tokenRecord = token as Record<string, unknown>;
       const accountRecord = account as Record<string, unknown> | null;
 
-      if (profile) {
-        const profileRecord = profile as Record<string, unknown>;
-        // Entra commonly exposes oid; some flows expose only sub.
-        const oid = firstString(profileRecord.oid, profileRecord.sub);
-        if (oid) {
-          tokenRecord.oid = oid;
-        }
-
-        // Some Entra tenants do not emit the "email" claim; use common fallbacks.
-        if (typeof token.email !== "string" || !token.email.trim()) {
-          const resolvedEmail = firstString(
-            profileRecord.email,
-            profileRecord.preferred_username,
-            profileRecord.upn,
-            profileRecord.unique_name,
-          );
-
-          if (resolvedEmail) {
-            token.email = resolvedEmail.toLowerCase();
-          }
-        }
-      }
-
-      // Profile can be absent on some callback paths under IIS/proxy setups.
-      // Fall back to durable token/account claims so session resolution still works.
-      if (typeof tokenRecord.oid !== "string" || !tokenRecord.oid.trim()) {
-        const resolvedOid = firstString(token.sub, account?.providerAccountId);
-        if (resolvedOid) {
-          tokenRecord.oid = resolvedOid;
-        }
-      }
-
-      if (typeof token.email !== "string" || !token.email.trim()) {
-        const resolvedEmail = firstString(
-          user?.email,
-          token.email,
-          tokenRecord.preferred_username,
-          tokenRecord.upn,
-          tokenRecord.unique_name,
-        );
-        if (resolvedEmail) {
-          token.email = resolvedEmail.toLowerCase();
-        }
-      }
-
-      // Some IIS/proxy callback paths do not surface profile claims reliably.
-      // As a final fallback, parse id_token payload claims from the provider account.
-      if (
-        (typeof tokenRecord.oid !== "string" || !tokenRecord.oid.trim()) ||
-        (typeof token.email !== "string" || !token.email.trim())
-      ) {
-        const idToken = firstString(accountRecord?.id_token, tokenRecord.id_token);
-        const idTokenPayload = parseJwtPayload(idToken);
-        if (idTokenPayload) {
-          const payloadOid = firstString(
-            idTokenPayload.oid,
-            idTokenPayload.sub,
-            idTokenPayload.objectid,
-          );
-
-          if ((typeof tokenRecord.oid !== "string" || !tokenRecord.oid.trim()) && payloadOid) {
-            tokenRecord.oid = payloadOid;
-          }
-
-          if (typeof token.email !== "string" || !token.email.trim()) {
-            const payloadEmail = firstString(
-              idTokenPayload.email,
-              idTokenPayload.preferred_username,
-              idTokenPayload.upn,
-              idTokenPayload.unique_name,
-            );
-            if (payloadEmail) {
-              token.email = payloadEmail.toLowerCase();
-            }
-          }
-
-        }
-      }
+      resolveOidFromProfile(tokenRecord, profile);
+      resolveEmailFromProfile(token, profile);
+      resolveOidFallback(tokenRecord, token, account);
+      resolveEmailFallback(token, tokenRecord, user);
+      resolveFromIdToken(tokenRecord, token, accountRecord);
 
       return token;
     },

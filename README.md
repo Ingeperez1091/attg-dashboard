@@ -173,7 +173,20 @@ ADF_PIPELINE_TRIGGER_ENDPOINT=<adf trigger endpoint url>
 ADF_PIPELINE_TRIGGER_TOKEN=<optional bearer token>
 ```
 
-### 3. (Optional) Run schema migrations
+
+### 3. (Optional) Provision the local database
+
+```powershell
+.\scripts\database\setup-database.ps1 -UseTrustedConnection
+
+# Example: setup with full SQL connection string
+.\scripts\database\setup-database.ps1 -ConnectionString "Server=attg.database.windows.net;Database=ATTG_Usage;User ID=your-user;Password=your-password;TrustServerCertificate=True;"
+
+# Example: setup with explicit SQL username/password
+.\scripts\database\setup-database.ps1 -Server "attg.database.windows.net" -Database "ATTG_Usage" -Username "your-user" -Password "your-password" -TrustServerCertificate
+```
+
+### 4. (Optional) Run schema migrations
 
 Use the migration runner to apply ordered SQL scripts from `database/migrations`.
 
@@ -181,11 +194,17 @@ Use the migration runner to apply ordered SQL scripts from `database/migrations`
 # Default range for Epic 005 migrations (006 through 009)
 .\scripts\database\run-migrations.ps1 -ServerInstance ".\SQLEXPRESS" -Database "ATTG_Usage" -UseTrustedConnection
 
+# Example: run with full SQL connection string
+.\scripts\database\run-migrations.ps1 -ConnectionString "Server=attg.database.windows.net;Database=ATTG_Usage;User ID=your-user;Password=your-password;TrustServerCertificate=True;"
+
+# Example: run with explicit SQL username/password
+.\scripts\database\run-migrations.ps1 -ServerInstance "attg.database.windows.net" -Database "ATTG_Usage" -Username "your-user" -Password "your-password" -TrustServerCertificate
+
 # Example: run only a subset
 .\scripts\database\run-migrations.ps1 -ServerInstance ".\SQLEXPRESS" -Database "ATTG_Usage" -From 6 -To 7 -UseTrustedConnection
 ```
 
-### 4. (Optional) Run rollback scripts
+### 5. (Optional) Run rollback scripts
 
 Use the rollback runner to execute scripts from `database/rollback` in descending order.
 
@@ -193,15 +212,16 @@ Use the rollback runner to execute scripts from `database/rollback` in descendin
 # Default rollback range for Epic 005 migrations (009 down to 006)
 .\scripts\database\run-rollback.ps1 -ServerInstance ".\SQLEXPRESS" -Database "ATTG_Usage" -UseTrustedConnection $true
 
+# Example: rollback with full SQL connection string
+.\scripts\database\run-rollback.ps1 -ConnectionString "Server=attg.database.windows.net;Database=ATTG_Usage;User ID=your-user;Password=your-password;TrustServerCertificate=True;"
+
+# Example: rollback with explicit SQL username/password
+.\scripts\database\run-rollback.ps1 -ServerInstance "attg.database.windows.net" -Database "ATTG_Usage" -Username "your-user" -Password "your-password" -TrustServerCertificate
+
 # Example: rollback only 009 to 008
 .\scripts\database\run-rollback.ps1 -ServerInstance ".\SQLEXPRESS" -Database "ATTG_Usage" -From 9 -To 8 -UseTrustedConnection $true
 ```
 
-### 5. (Optional) Provision the local database
-
-```powershell
-.\scripts\database\setup-database.ps1 -UseTrustedConnection
-```
 
 ### 6. Start the dev server
 
@@ -224,6 +244,9 @@ Common parameters:
 |----------|-------------|---------|
 | `ServerInstance` | SQL Server instance (for example `.\SQLEXPRESS`) | `.\SQLEXPRESS` |
 | `Database` | Target database name | `ATTG_Usage` |
+| `ConnectionString` | Full SQL connection string (can include server, database, auth, and trust options) | Empty |
+| `Username` | SQL login username (requires `Password`) | Empty |
+| `Password` | SQL login password (requires `Username`) | Empty |
 | `From` | Starting migration index | `6` (migrations), `9` (rollback) |
 | `To` | Ending migration index | `9` (migrations), `6` (rollback) |
 | `UseTrustedConnection` | Use Windows auth (`sqlcmd -E`) | Off for migrations, On for rollback |
@@ -232,6 +255,7 @@ Notes:
 
 - `sqlcmd` must be installed and available on PATH.
 - Migration and rollback scripts stop on first SQL error (`sqlcmd -b`).
+- Use either `UseTrustedConnection` or `Username`/`Password` for authentication.
 
 ## Environment Variables
 

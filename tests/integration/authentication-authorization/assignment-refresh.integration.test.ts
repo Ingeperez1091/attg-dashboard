@@ -22,7 +22,7 @@ describe("integration - role and assignment changes apply on next authorization 
     const beforeResponse = await getApplicationModel(
       new Request(`http://localhost/api/applications/${appIdTwo}/numeratormodel`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${userId}` }
+        headers: { Cookie: `dev_user_id=${userId}` }
       }),
       { params: Promise.resolve({ appId: appIdTwo }) }
     );
@@ -34,7 +34,7 @@ describe("integration - role and assignment changes apply on next authorization 
     const afterResponse = await getApplicationModel(
       new Request(`http://localhost/api/applications/${appIdTwo}/numeratormodel`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${userId}` }
+        headers: { Cookie: `dev_user_id=${userId}` }
       }),
       { params: Promise.resolve({ appId: appIdTwo }) }
     );
@@ -53,7 +53,7 @@ describe("integration - role and assignment changes apply on next authorization 
       new Request(`http://localhost/api/filters/denominator/${appIdOne}/preview`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${userId}`,
+          Cookie: `dev_user_id=${userId}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
@@ -73,7 +73,7 @@ describe("integration - role and assignment changes apply on next authorization 
       new Request(`http://localhost/api/filters/denominator/${appIdOne}/preview`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${userId}`,
+          Cookie: `dev_user_id=${userId}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({

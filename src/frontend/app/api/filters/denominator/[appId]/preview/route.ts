@@ -8,6 +8,13 @@ import {
 import { requireFilterWriteScope } from "@/infrastructure/middleware/filterAuthorizationMiddleware";
 import { DenominatorFilterService } from "@/core/application/services/DenominatorFilterService";
 import { updateDenominatorFiltersSchema } from "@/infrastructure/validation/denominatorFilterSchemas";
+import {
+  createOperationContext,
+  logOperationStart,
+  logOperationSuccess,
+  logOperationError,
+  logOperationValidationFailure
+} from "@/lib/api/operation-logger";
 
 function toContractError(error: unknown): { error: string; message: string } {
   const status = toStatusCode(error);
@@ -27,6 +34,9 @@ export async function POST(
   context: { params: Promise<{ appId: string }> }
 ): Promise<Response> {
   const repositories = getRuntimeRepositories();
+  const opCtx = createOperationContext(request);
+  logOperationStart(opCtx);
+  const start = Date.now();
 
   try {
     const { appId } = await context.params;
@@ -36,6 +46,11 @@ export async function POST(
     const parsed = updateDenominatorFiltersSchema.safeParse(body);
 
     if (!parsed.success) {
+      const failures = parsed.error.errors.map((e) => ({
+        field: e.path.join(".") || "request",
+        message: e.message
+      }));
+      logOperationValidationFailure(opCtx, failures);
       return Response.json({
         error: "VALIDATION_ERROR",
         message: "Invalid request body.",
@@ -52,8 +67,12 @@ export async function POST(
     );
 
     const preview = await service.previewRules(appId, parsed.data.rules);
+    logOperationSuccess(opCtx, 200, Date.now() - start);
     return Response.json(preview, { status: 200 });
   } catch (error: unknown) {
+    const status = toStatusCode(error);
+    logOperationError(opCtx, error, status, Date.now() - start);
+
     if (error instanceof AppError && error.status === 400) {
       return Response.json({
         error: "VALIDATION_ERROR",
@@ -64,6 +83,6 @@ export async function POST(
       }, { status: 400 });
     }
 
-    return Response.json(toContractError(error), { status: toStatusCode(error) });
+    return Response.json(toContractError(error), { status });
   }
 }

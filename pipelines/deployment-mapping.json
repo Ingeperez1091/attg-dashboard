@@ -1,5 +1,34 @@
 {
   "description": "ADF artifact mapping used for publish/import alignment in local source control.",
+  "linkedServices": [
+    {
+      "name": "LS_KeyVault",
+      "path": "pipelines/linkedServices/LS_KeyVault.json",
+      "type": "LinkedService"
+    },
+    {
+      "name": "LS_Mercury_ExternalSQL",
+      "path": "pipelines/linkedServices/LS_Mercury_ExternalSQL.json",
+      "type": "LinkedService"
+    },
+    {
+      "name": "LS_ATTG_Usage_AzureSQL",
+      "path": "pipelines/linkedServices/LS_ATTG_Usage_AzureSQL.json",
+      "type": "LinkedService"
+    }
+  ],
+  "datasets": [
+    {
+      "name": "DS_Mercury_DenominatorView",
+      "path": "pipelines/datasets/DS_Mercury_DenominatorView.json",
+      "type": "Dataset"
+    },
+    {
+      "name": "DS_ATTG_DenominatorSnapshot",
+      "path": "pipelines/datasets/DS_ATTG_DenominatorSnapshot.json",
+      "type": "Dataset"
+    }
+  ],
   "pipelines": [
     {
       "name": "PL_DenomLoad_Weekly",

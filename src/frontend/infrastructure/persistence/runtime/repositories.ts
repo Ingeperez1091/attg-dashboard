@@ -93,9 +93,7 @@ export function getRuntimeValidationPipelineRepository(): IValidationPipelineRep
 }
 
 export function getRuntimeADFPipelineClient(): IADFPipelineClient {
-  if (!adfPipelineClient) {
-    adfPipelineClient = new ADFPipelineClient();
-  }
+  adfPipelineClient ??= new ADFPipelineClient();
 
   return adfPipelineClient;
 }

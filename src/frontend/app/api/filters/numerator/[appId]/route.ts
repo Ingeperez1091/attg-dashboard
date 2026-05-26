@@ -3,6 +3,13 @@ import { getRuntimeRepositories } from "@/infrastructure/persistence/runtime/rep
 import { getRuntimeNumeratorFilterRepository } from "@/infrastructure/persistence/runtime/repositories";
 import { logMutationEvent } from "@/lib/api/request-logger";
 import {
+  createOperationContext,
+  logOperationStart,
+  logOperationSuccess,
+  logOperationError,
+  logOperationValidationFailure
+} from "@/lib/api/operation-logger";
+import {
   requireFilterReadScope,
   requireFilterWriteScope
 } from "@/infrastructure/middleware/filterAuthorizationMiddleware";
@@ -24,6 +31,9 @@ export async function GET(
   context: { params: Promise<{ appId: string }> }
 ): Promise<Response> {
   const repositories = getRuntimeRepositories();
+  const opCtx = createOperationContext(request);
+  logOperationStart(opCtx);
+  const start = Date.now();
 
   try {
     const { appId } = await context.params;
@@ -32,9 +42,12 @@ export async function GET(
     const service = new NumeratorFilterService(getRuntimeNumeratorFilterRepository());
     const ruleset = await service.getFiltersByApplicationId(appId);
 
+    logOperationSuccess(opCtx, 200, Date.now() - start);
     return Response.json(ruleset, { status: 200 });
   } catch (error: unknown) {
-    return Response.json(toContractError(error), { status: toStatusCode(error) });
+    const status = toStatusCode(error);
+    logOperationError(opCtx, error, status, Date.now() - start);
+    return Response.json(toContractError(error), { status });
   }
 }
 
@@ -43,15 +56,24 @@ export async function PUT(
   context: { params: Promise<{ appId: string }> }
 ): Promise<Response> {
   const repositories = getRuntimeRepositories();
+  const opCtx = createOperationContext(request);
+  logOperationStart(opCtx);
+  const start = Date.now();
 
   try {
     const { appId } = await context.params;
     const session = await requireFilterWriteScope(request, appId, repositories);
+    opCtx.callerUserId = session.userId;
 
     const body = await request.json();
     const parsed = updateNumeratorFiltersSchema.safeParse(body);
     
     if (!parsed.success) {
+      const failures = parsed.error.errors.map((e) => ({
+        field: e.path.join(".") || "request",
+        message: e.message
+      }));
+      logOperationValidationFailure(opCtx, failures);
       return Response.json({
         error: "VALIDATION_ERROR",
         message: "Invalid request body.",
@@ -67,8 +89,12 @@ export async function PUT(
       applicationId: appId,
       ruleCount: parsed.data.rules.length
     });
+    logOperationSuccess(opCtx, 200, Date.now() - start);
     return Response.json(updated, { status: 200 });
   } catch (error: unknown) {
+    const status = toStatusCode(error);
+    logOperationError(opCtx, error, status, Date.now() - start);
+
     if (error instanceof AppError && error.status === 400 && error.code === "FIELD_NOT_FILTERABLE") {
       return Response.json({
         error: "VALIDATION_ERROR",
@@ -89,6 +115,6 @@ export async function PUT(
       }, { status: 400 });
     }
 
-    return Response.json(toContractError(error), { status: toStatusCode(error) });
+    return Response.json(toContractError(error), { status });
   }
 }

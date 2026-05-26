@@ -2,13 +2,13 @@ import { Spinner } from "@/app/components/Spinner";
 import { resolveUserDisplayName, UserDirectoryEntry } from "@/app/components/hooks/useUserAuditMetadata";
 import { NumeratorRuleViewDto } from "@/core/application/dto/numerator/NumeratorFilterDto";
 
-type NumeratorRuleListProps = {
+type NumeratorRuleListProps = Readonly<{
   rules: NumeratorRuleViewDto[];
   loading?: boolean;
   lastUpdatedAt?: string | null;
   lastUpdatedBy?: string | null;
   userDirectory?: UserDirectoryEntry[];
-};
+}>;
 
 export function NumeratorRuleList({ rules, loading, lastUpdatedAt, lastUpdatedBy, userDirectory = [] }: NumeratorRuleListProps) {
   if (loading) {
@@ -24,6 +24,7 @@ export function NumeratorRuleList({ rules, loading, lastUpdatedAt, lastUpdatedBy
   return (
     <section className="card">
       <h2 className="card__title">Numerator Rules</h2>
+      <div className="table-scroll-wrap">
       <table>
         <thead>
           <tr>
@@ -46,6 +47,7 @@ export function NumeratorRuleList({ rules, loading, lastUpdatedAt, lastUpdatedBy
           ))}
         </tbody>
       </table>
+      </div>
       {lastUpdatedAt && (
         <p>
           Last updated: {new Date(lastUpdatedAt).toLocaleString()} by {displayName}

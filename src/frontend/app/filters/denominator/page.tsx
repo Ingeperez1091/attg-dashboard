@@ -7,7 +7,10 @@ import { DenominatorRuleEditor } from "@/app/components/filters/DenominatorRuleE
 import { DenominatorPreview } from "@/app/components/filters/DenominatorPreview";
 import { AdoptionSettingsPanel } from "@/app/components/filters/AdoptionSettingsPanel";
 import { DenominatorModelFields } from "@/app/components/filters/DenominatorModelFields";
-import { resolveUserDisplayName, UserDirectoryEntry } from "@/app/components/hooks/useUserAuditMetadata";
+import {
+  resolveUserDisplayName,
+  UserDirectoryEntry,
+} from "@/app/components/hooks/useUserAuditMetadata";
 import { ApplicationOptionDto } from "@/core/application/dto/applications/ApplicationOptionDto";
 import {
   AdoptionSettingsDto,
@@ -17,26 +20,35 @@ import {
   DenominatorPreviewResultDto,
   DenominatorRuleExpressionDto,
   DenominatorRulesetDto,
-  DenominatorRuleViewDto
+  DenominatorRuleViewDto,
 } from "@/core/application/dto/denominator/DenominatorFilterDto";
 
 export default function DenominatorFiltersPage() {
   const [applications, setApplications] = useState<ApplicationOptionDto[]>([]);
   const [selectedAppId, setSelectedAppId] = useState<string>("");
-  const [modelFields, setModelFields] = useState<DenominatorModelFieldDto[]>([]);
+  const [modelFields, setModelFields] = useState<DenominatorModelFieldDto[]>(
+    [],
+  );
   const [ruleset, setRuleset] = useState<DenominatorRulesetDto | null>(null);
-  const [draftRules, setDraftRules] = useState<DenominatorRuleExpressionDto[]>([]);
-  const [preview, setPreview] = useState<DenominatorPreviewResultDto | null>(null);
+  const [draftRules, setDraftRules] = useState<DenominatorRuleExpressionDto[]>(
+    [],
+  );
+  const [preview, setPreview] = useState<DenominatorPreviewResultDto | null>(
+    null,
+  );
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const [adoptionSettings, setAdoptionSettings] = useState<AdoptionSettingsDto | null>(null);
+  const [adoptionSettings, setAdoptionSettings] =
+    useState<AdoptionSettingsDto | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [fieldsPanelOpen, setFieldsPanelOpen] = useState(false);
-  const [auditHistory, setAuditHistory] = useState<DenominatorAuditHistoryEntryDto[]>([]);
+  const [auditHistory, setAuditHistory] = useState<
+    DenominatorAuditHistoryEntryDto[]
+  >([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [auditExpanded, setAuditExpanded] = useState(false);
@@ -52,7 +64,10 @@ export default function DenominatorFiltersPage() {
     setAuditError(null);
 
     try {
-      const response = await fetch(`/api/filters/denominator/${applicationId}/audit`, { cache: "no-store" });
+      const response = await fetch(
+        `/api/filters/denominator/${applicationId}/audit`,
+        { cache: "no-store" },
+      );
       const body = await response.json();
 
       if (!response.ok) {
@@ -74,7 +89,9 @@ export default function DenominatorFiltersPage() {
   useEffect(() => {
     async function loadApplications() {
       try {
-        const response = await fetch("/api/applications", { cache: "no-store" });
+        const response = await fetch("/api/applications", {
+          cache: "no-store",
+        });
         const body = await response.json();
         const nextApplications = body.applications ?? [];
         setApplications(nextApplications);
@@ -89,7 +106,9 @@ export default function DenominatorFiltersPage() {
 
     async function loadUsers() {
       try {
-        const response = await fetch("/api/users/directory", { cache: "no-store" });
+        const response = await fetch("/api/users/directory", {
+          cache: "no-store",
+        });
         if (response.ok) {
           const body = await response.json();
           setUsers(body.users ?? []);
@@ -122,11 +141,16 @@ export default function DenominatorFiltersPage() {
       setFieldsPanelOpen(false);
 
       try {
-        const [modelResponse, rulesResponse, settingsResponse] = await Promise.all([
-          fetch("/api/denomindator-model", { cache: "no-store" }),
-          fetch(`/api/filters/denominator/${selectedAppId}`, { cache: "no-store" }),
-          fetch(`/api/filters/denominator/${selectedAppId}/settings`, { cache: "no-store" })
-        ]);
+        const [modelResponse, rulesResponse, settingsResponse] =
+          await Promise.all([
+            fetch("/api/denomindator-model", { cache: "no-store" }),
+            fetch(`/api/filters/denominator/${selectedAppId}`, {
+              cache: "no-store",
+            }),
+            fetch(`/api/filters/denominator/${selectedAppId}/settings`, {
+              cache: "no-store",
+            }),
+          ]);
 
         if (!modelResponse.ok) {
           throw new Error("Unable to load denominator model.");
@@ -138,22 +162,30 @@ export default function DenominatorFiltersPage() {
 
         const modelBody = await modelResponse.json();
         const rulesBody = await rulesResponse.json();
-        const settingsBody = settingsResponse.ok ? await settingsResponse.json() : null;
+        const settingsBody = settingsResponse.ok
+          ? await settingsResponse.json()
+          : null;
 
         setModelFields(modelBody.fields ?? []);
         setRuleset({
           rules: rulesBody.rules ?? [],
           lastUpdatedAt: rulesBody.lastUpdatedAt ?? null,
-          lastUpdatedBy: rulesBody.lastUpdatedBy ?? null
+          lastUpdatedBy: rulesBody.lastUpdatedBy ?? null,
         });
-        setDraftRules((rulesBody.rules ?? []).map((rule: DenominatorRuleViewDto) => ({
-          denominatorModelId: rule.denominatorModelId,
-          operator: rule.operator,
-          value: rule.value
-        })));
+        setDraftRules(
+          (rulesBody.rules ?? []).map((rule: DenominatorRuleViewDto) => ({
+            denominatorModelId: rule.denominatorModelId,
+            operator: rule.operator,
+            value: rule.value,
+          })),
+        );
         setAdoptionSettings(settingsBody ?? null);
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : "Unexpected error while loading denominator configuration.");
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Unexpected error while loading denominator configuration.",
+        );
       } finally {
         setLoading(false);
       }
@@ -162,22 +194,27 @@ export default function DenominatorFiltersPage() {
     loadDenominatorData();
   }, [selectedAppId]);
 
-  async function handleSave(rulesToSave: DenominatorRuleExpressionDto[]): Promise<void> {
+  async function handleSave(
+    rulesToSave: DenominatorRuleExpressionDto[],
+  ): Promise<void> {
     setSaving(true);
     setError(null);
 
     try {
-      const response = await fetch(`/api/filters/denominator/${selectedAppId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rules: rulesToSave.map((rule) => ({
-            denominatorModelId: rule.denominatorModelId,
-            operator: rule.operator,
-            value: rule.value.trim()
-          }))
-        })
-      });
+      const response = await fetch(
+        `/api/filters/denominator/${selectedAppId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rules: rulesToSave.map((rule) => ({
+              denominatorModelId: rule.denominatorModelId,
+              operator: rule.operator,
+              value: rule.value.trim(),
+            })),
+          }),
+        },
+      );
 
       const body = await response.json();
       if (!response.ok) {
@@ -189,13 +226,15 @@ export default function DenominatorFiltersPage() {
       setRuleset({
         rules: savedRules,
         lastUpdatedAt: body.lastUpdatedAt ?? null,
-        lastUpdatedBy: body.lastUpdatedBy ?? null
+        lastUpdatedBy: body.lastUpdatedBy ?? null,
       });
-      setDraftRules(savedRules.map((rule: DenominatorRuleViewDto) => ({
-        denominatorModelId: rule.denominatorModelId,
-        operator: rule.operator,
-        value: rule.value
-      })));
+      setDraftRules(
+        savedRules.map((rule: DenominatorRuleViewDto) => ({
+          denominatorModelId: rule.denominatorModelId,
+          operator: rule.operator,
+          value: rule.value,
+        })),
+      );
       setEditing(false);
       if (auditExpanded) {
         await loadAuditHistory(selectedAppId);
@@ -209,22 +248,27 @@ export default function DenominatorFiltersPage() {
     }
   }
 
-  async function handlePreview(rulesToPreview: DenominatorRuleExpressionDto[]): Promise<void> {
+  async function handlePreview(
+    rulesToPreview: DenominatorRuleExpressionDto[],
+  ): Promise<void> {
     setPreviewLoading(true);
     setPreviewError(null);
 
     try {
-      const response = await fetch(`/api/filters/denominator/${selectedAppId}/preview`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rules: rulesToPreview.map((rule) => ({
-            denominatorModelId: rule.denominatorModelId,
-            operator: rule.operator,
-            value: rule.value.trim()
-          }))
-        })
-      });
+      const response = await fetch(
+        `/api/filters/denominator/${selectedAppId}/preview`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rules: rulesToPreview.map((rule) => ({
+              denominatorModelId: rule.denominatorModelId,
+              operator: rule.operator,
+              value: rule.value.trim(),
+            })),
+          }),
+        },
+      );
 
       const body = await response.json();
       if (!response.ok) {
@@ -241,27 +285,34 @@ export default function DenominatorFiltersPage() {
   }
 
   function handleCancel(): void {
-    setDraftRules((ruleset?.rules ?? []).map((rule) => ({
-      denominatorModelId: rule.denominatorModelId,
-      operator: rule.operator,
-      value: rule.value
-    })));
+    setDraftRules(
+      (ruleset?.rules ?? []).map((rule) => ({
+        denominatorModelId: rule.denominatorModelId,
+        operator: rule.operator,
+        value: rule.value,
+      })),
+    );
     setPreview(null);
     setPreviewError(null);
     setEditing(false);
     setError(null);
   }
 
-  async function handleSaveSettings(settings: AdoptionSettingsUpdateDto): Promise<void> {
+  async function handleSaveSettings(
+    settings: AdoptionSettingsUpdateDto,
+  ): Promise<void> {
     setSettingsSaving(true);
     setError(null);
 
     try {
-      const response = await fetch(`/api/filters/denominator/${selectedAppId}/settings`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings)
-      });
+      const response = await fetch(
+        `/api/filters/denominator/${selectedAppId}/settings`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(settings),
+        },
+      );
 
       const body = await response.json();
       if (!response.ok) {
@@ -373,11 +424,16 @@ export default function DenominatorFiltersPage() {
         )}
 
         {selectedAppId && !loading && (
-          <div className="panel" style={{ padding: "1.25rem", marginTop: "16px" }}>
+          <div
+            className="panel"
+            style={{ padding: "1.25rem", marginTop: "16px" }}
+          >
             <AdoptionSettingsPanel
               settings={adoptionSettings}
               availableMetrics={modelFields
-                .filter((field) => field.fieldType === "numeric" && field.isActive)
+                .filter(
+                  (field) => field.fieldType === "numeric" && field.isActive,
+                )
                 .map((field) => field.fieldName)}
               userDirectory={users}
               saving={settingsSaving}
@@ -387,7 +443,10 @@ export default function DenominatorFiltersPage() {
         )}
 
         {selectedAppId && !loading && (
-          <div className="panel" style={{ padding: "1.25rem", marginTop: "16px" }}>
+          <div
+            className="panel"
+            style={{ padding: "1.25rem", marginTop: "16px" }}
+          >
             <button
               type="button"
               className="motif-action-button"
@@ -408,30 +467,34 @@ export default function DenominatorFiltersPage() {
                 )}
 
                 {!auditLoading && !auditError && auditHistory.length > 0 && (
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Changed At</th>
-                        <th>Scope</th>
-                        <th>Actor</th>
-                        <th>Summary</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {auditHistory.map((entry) => (
-                        <tr key={entry.auditId}>
-                          <td>{new Date(entry.changedAt).toLocaleString()}</td>
-                          <td>{entry.changeScope}</td>
-                          <td>{actorLabel(entry.actorUserId)}</td>
-                          <td>
-                            {entry.changeScope === "Adoption"
-                              ? "Adoption settings updated"
-                              : "Denominator rules updated"}
-                          </td>
+                  <div className="table-scroll-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Changed At</th>
+                          <th>Scope</th>
+                          <th>Actor</th>
+                          <th>Summary</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {auditHistory.map((entry) => (
+                          <tr key={entry.auditId}>
+                            <td>
+                              {new Date(entry.changedAt).toLocaleString()}
+                            </td>
+                            <td>{entry.changeScope}</td>
+                            <td>{actorLabel(entry.actorUserId)}</td>
+                            <td>
+                              {entry.changeScope === "Adoption"
+                                ? "Adoption settings updated"
+                                : "Denominator rules updated"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             )}
@@ -445,7 +508,11 @@ export default function DenominatorFiltersPage() {
           className={`fields-panel-tab${fieldsPanelOpen ? " fields-panel-tab-open" : ""}`}
           onClick={() => setFieldsPanelOpen(!fieldsPanelOpen)}
           title="Show denominator field definitions"
-          aria-label={fieldsPanelOpen ? "Hide denominator field definitions" : "Show denominator field definitions"}
+          aria-label={
+            fieldsPanelOpen
+              ? "Hide denominator field definitions"
+              : "Show denominator field definitions"
+          }
         >
           <span className="fields-panel-tab-icon" aria-hidden="true">
             {fieldsPanelOpen ? "›" : "‹"}

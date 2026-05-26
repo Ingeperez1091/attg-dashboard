@@ -2,6 +2,7 @@ import { RoleName } from "@/core/domain/entities/Role";
 
 export interface AdminUserDto {
   userId: string;
+  username: string;
   email: string;
   displayName: string | null;
   azureAdObjectId: string | null;

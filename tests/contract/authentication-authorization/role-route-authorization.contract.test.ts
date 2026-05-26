@@ -16,7 +16,7 @@ describe("contract - role and route authorization", () => {
     const response = await listAdminUsers(
       new Request("http://localhost/api/admin/users", {
         method: "GET",
-        headers: { Authorization: `Bearer ${viewerUserId}` }
+        headers: { Cookie: `dev_user_id=${viewerUserId}` }
       })
     );
 
@@ -38,7 +38,7 @@ describe("contract - role and route authorization", () => {
       new Request(`http://localhost/api/admin/users/${targetUser.userId}/role`, {
         method: "PUT",
         headers: {
-          Authorization: `Bearer ${ownerUserId}`,
+          Cookie: `dev_user_id=${ownerUserId}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({ roleId: "administrator" })
@@ -59,7 +59,7 @@ describe("contract - role and route authorization", () => {
       new Request(`http://localhost/api/filters/denominator/${appId}/preview`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${viewerUserId}`,
+          Cookie: `dev_user_id=${viewerUserId}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
@@ -77,7 +77,7 @@ describe("contract - role and route authorization", () => {
       new Request(`http://localhost/api/filters/denominator/${appId}/preview`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${ownerUserId}`,
+          Cookie: `dev_user_id=${ownerUserId}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({

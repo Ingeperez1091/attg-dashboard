@@ -24,7 +24,7 @@ describe("integration - role route and action authorization", () => {
 
     const ownerAccess = await evaluateAdminUsersRouteAccess(
       new Request("http://localhost/admin/users", {
-        headers: { Authorization: `Bearer ${ownerUserId}` }
+        headers: { Cookie: `dev_user_id=${ownerUserId}` }
       }),
       repositories
     );
@@ -40,7 +40,7 @@ describe("integration - role route and action authorization", () => {
       new Request(`http://localhost/api/filters/denominator/${appId}/preview`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${viewerUserId}`,
+          Cookie: `dev_user_id=${viewerUserId}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
@@ -56,7 +56,7 @@ describe("integration - role route and action authorization", () => {
       new Request(`http://localhost/api/filters/denominator/${appId}/preview`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${ownerUserId}`,
+          Cookie: `dev_user_id=${ownerUserId}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({

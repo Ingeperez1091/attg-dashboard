@@ -1,7 +1,7 @@
 {
   "name": "PL_DenomLoad_Weekly",
   "properties": {
-    "description": "Skeleton ADF pipeline for weekly denominator ingestion from external Mercury source into local stage.DenominatorSnapshot.",
+    "description": "ADF pipeline for weekly denominator ingestion from external Mercury source into local stage.DenominatorSnapshot. Performs truncate-reload, type coercion/dedup via SP, and row-count validation.",
     "parameters": {
       "sourceMode": {
         "type": "String",
@@ -14,16 +14,62 @@
     },
     "activities": [
       {
+        "name": "TruncateSnapshotBeforeLoad",
+        "description": "Clear the staging table before fresh load to implement truncate-reload pattern.",
+        "type": "Script",
+        "linkedServiceName": {
+          "referenceName": "LS_ATTG_Usage_AzureSQL",
+          "type": "LinkedServiceReference"
+        },
+        "typeProperties": {
+          "scripts": [
+            {
+              "type": "NonQuery",
+              "text": "TRUNCATE TABLE stage.DenominatorSnapshot;"
+            }
+          ]
+        },
+        "policy": {
+          "timeout": "00:05:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30
+        }
+      },
+      {
         "name": "CopyDenominatorFromExternalSource",
+        "description": "Copy denominator data from external Mercury SQL Server view into local staging table.",
         "type": "Copy",
+        "dependsOn": [
+          {
+            "activity": "TruncateSnapshotBeforeLoad",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "inputs": [
+          {
+            "referenceName": "DS_Mercury_DenominatorView",
+            "type": "DatasetReference"
+          }
+        ],
+        "outputs": [
+          {
+            "referenceName": "DS_ATTG_DenominatorSnapshot",
+            "type": "DatasetReference"
+          }
+        ],
         "typeProperties": {
           "source": {
             "type": "SqlSource",
-            "sqlReaderQuery": "SELECT * FROM [InventoryAnalysis].[dbo].[vw_USTaxBTS_FY26_MaxACD]"
+            "sqlReaderQuery": "SELECT EngagementID, Engagement, ClientID, Client, AccountChannel, EngagementSubServiceLine, EngagementServiceCode, EngagementService, EngagementStatus, CreationDate, ReleaseDate, ETD_ANSRAmt, FYTD_ANSRAmt, ETD_TERAmt, FYTD_TERAmt, ETD_ChargedHours, FYTD_ChargedHours FROM [InventoryAnalysis].[dbo].[vw_USTaxBTS_FY26_MaxACD]"
           },
           "sink": {
-            "type": "SqlSink",
-            "writeBehavior": "insert"
+            "type": "AzureSqlSink",
+            "writeBehavior": "insert",
+            "sqlWriterUseTableLock": true,
+            "tableOption": "none",
+            "disableMetricsCollection": false
           },
           "enableStaging": false
         },
@@ -35,6 +81,7 @@
       },
       {
         "name": "RefreshDenominatorLocalProjection",
+        "description": "Run type coercion, deduplication, and LoadDate stamping on freshly ingested snapshot rows.",
         "type": "SqlServerStoredProcedure",
         "dependsOn": [
           {
@@ -44,8 +91,12 @@
             ]
           }
         ],
+        "linkedServiceName": {
+          "referenceName": "LS_ATTG_Usage_AzureSQL",
+          "type": "LinkedServiceReference"
+        },
         "typeProperties": {
-          "storedProcedureName": "stage.usp_RefreshDenominatorLocal",
+          "storedProcedureName": "[stage].[usp_RefreshDenominatorLocal]",
           "storedProcedureParameters": {}
         },
         "policy": {
@@ -56,6 +107,7 @@
       },
       {
         "name": "ValidateSnapshotHasRows",
+        "description": "Guard: verify the snapshot has data after load and cleansing. Zero rows = pipeline failure.",
         "type": "Lookup",
         "dependsOn": [
           {
@@ -65,9 +117,13 @@
             ]
           }
         ],
+        "linkedServiceName": {
+          "referenceName": "LS_ATTG_Usage_AzureSQL",
+          "type": "LinkedServiceReference"
+        },
         "typeProperties": {
           "source": {
-            "type": "SqlSource",
+            "type": "AzureSqlSource",
             "sqlReaderQuery": "SELECT COUNT(1) AS SnapshotRowCount FROM stage.DenominatorSnapshot"
           },
           "firstRowOnly": true
@@ -77,12 +133,41 @@
           "retry": 0,
           "retryIntervalInSeconds": 30
         }
+      },
+      {
+        "name": "FailIfSnapshotEmpty",
+        "description": "Raise pipeline failure if post-load row count is zero.",
+        "type": "IfCondition",
+        "dependsOn": [
+          {
+            "activity": "ValidateSnapshotHasRows",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "expression": {
+            "value": "@equals(activity('ValidateSnapshotHasRows').output.firstRow.SnapshotRowCount, 0)",
+            "type": "Expression"
+          },
+          "ifTrueActivities": [
+            {
+              "name": "ThrowEmptySnapshotError",
+              "type": "Fail",
+              "typeProperties": {
+                "message": "stage.DenominatorSnapshot has zero rows after load. External source may be empty or copy activity failed silently.",
+                "errorCode": "DENOM_EMPTY_SNAPSHOT"
+              }
+            }
+          ]
+        }
       }
     ],
     "annotations": [
       "denominator-load",
       "weekly",
-      "architecture-aligned-skeleton"
+      "production-ready"
     ]
   }
 }

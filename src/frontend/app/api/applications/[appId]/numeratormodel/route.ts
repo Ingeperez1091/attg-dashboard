@@ -1,6 +1,5 @@
 import { toStatusCode } from "@/lib/api/error-handler";
-import { getRuntimeRepositories } from "@/infrastructure/persistence/runtime/repositories";
-import { getRuntimeNumeratorFilterRepository } from "@/infrastructure/persistence/runtime/repositories";
+import { getRuntimeRepositories , getRuntimeNumeratorFilterRepository } from "@/infrastructure/persistence/runtime/repositories";
 import { requireFilterReadScope } from "@/infrastructure/middleware/filterAuthorizationMiddleware";
 import { NumeratorFilterService } from "@/core/application/services/NumeratorFilterService";
 

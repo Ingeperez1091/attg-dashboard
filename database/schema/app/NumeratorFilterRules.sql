@@ -19,6 +19,12 @@ BEGIN
             'EQUALS', 'NOT_EQUALS', 'CONTAINS', 'NOT_CONTAINS', 'IN_LIST', 'NOT_IN_LIST',
             'GREATER_THAN', 'GREATER_OR_EQUAL', 'LESS_THAN', 'LESS_OR_EQUAL'
         )),
-        CONSTRAINT CK_NumeratorFilterRules_RuleOrder CHECK (RuleOrder > 0)
+        CONSTRAINT CK_NumeratorFilterRules_RuleOrder CHECK (RuleOrder > 0),
+        CONSTRAINT CK_NumeratorFilterRules_Value_NoInjection CHECK (
+            Value NOT LIKE '%''%'
+            AND Value NOT LIKE '%--%'
+            AND Value NOT LIKE '%/*%'
+            AND Value NOT LIKE '%*/%'
+        )
     );
 END;
