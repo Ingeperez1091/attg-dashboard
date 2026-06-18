@@ -1,3 +1,5 @@
+import { assertAllowedOutboundUrl } from "@/infrastructure/clients/ADFPipelineClient";
+
 type RuntimeEnv = {
   NODE_ENV?: string;
   ENABLE_DEV_BYPASS?: string;
@@ -68,6 +70,12 @@ export function validateRuntimeSecurityConfig(
     throw new Error(
       "Invalid production security configuration: DEV_SESSION_USER_ID is set",
     );
+  }
+
+  // SSRF guard: validate ADF endpoint at startup if configured
+  const adfEndpoint = process.env.ADF_PIPELINE_TRIGGER_ENDPOINT;
+  if (adfEndpoint) {
+    assertAllowedOutboundUrl(adfEndpoint);
   }
 
   console.info("[security] Runtime security configuration validated.", {

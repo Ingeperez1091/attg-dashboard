@@ -234,16 +234,20 @@ export interface InsertDenominatorRuleChangeAuditInput {
   actorUserId: string;
   previousRulesJson: string;
   newRulesJson: string;
+  changeType?: string;
+  overrideReason?: string | null;
 }
 
 export async function insertDenominatorRuleChangeAudit(
   client: SqlClient,
   input: InsertDenominatorRuleChangeAuditInput
 ): Promise<void> {
+  const changeType = input.changeType ?? 'Update';
+  const overrideReason = input.overrideReason ?? null;
   await executeParameterizedQuery(client, `
     INSERT INTO app.RuleChangeAudit
-    (AuditId, ApplicationId, ActorUserId, PreviousRulesJson, NewRulesJson, ChangeScope, ChangedAt)
+    (AuditId, ApplicationId, ActorUserId, PreviousRulesJson, NewRulesJson, ChangeScope, ChangeType, OverrideReason, ChangedAt)
     VALUES
-    (@auditId, @applicationId, @actorUserId, @previousRulesJson, @newRulesJson, 'Denominator', SYSUTCDATETIME());
-  `, { ...input });
+    (@auditId, @applicationId, @actorUserId, @previousRulesJson, @newRulesJson, 'Denominator', @changeType, @overrideReason, SYSUTCDATETIME());
+  `, { ...input, changeType, overrideReason });
 }

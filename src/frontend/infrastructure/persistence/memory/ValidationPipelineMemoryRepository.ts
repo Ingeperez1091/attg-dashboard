@@ -77,13 +77,13 @@ export class ValidationPipelineMemoryRepository implements IValidationPipelineRe
     run.updatedBy = input.actorUserId;
     run.updateDate = new Date().toISOString();
 
-    if (typeof input.errorMessage !== "undefined") {
+    if (input.errorMessage !== undefined) {
       run.errorMessage = input.errorMessage;
     }
-    if (typeof input.startTime !== "undefined") {
+    if (input.startTime !== undefined) {
       run.startTime = input.startTime;
     }
-    if (typeof input.endTime !== "undefined") {
+    if (input.endTime !== undefined) {
       run.endTime = input.endTime;
     }
 
@@ -221,7 +221,18 @@ export class ValidationPipelineMemoryRepository implements IValidationPipelineRe
     return this.updateRunStatus({ runId, actorUserId, status });
   }
 
-  async executeLocalPipeline(_input: CreatePipelineRunInput): Promise<void> {
-    return Promise.resolve();
+  async executeLocalPipeline(input: CreatePipelineRunInput): Promise<void> {
+    // Simulate SP execution completing the run. Uses await + setTimeout(0) to
+    // yield one event-loop tick before completing — this ensures fire-and-forget
+    // callers (void executeLocalPipeline) see "Queued" initially (like the real
+    // DB async path), while direct await callers (preview service) see Completed.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await this.updateRunStatus({
+      runId: input.runId,
+      actorUserId: input.actorUserId,
+      status: "Completed",
+      startTime: new Date().toISOString(),
+      endTime: new Date().toISOString()
+    });
   }
 }

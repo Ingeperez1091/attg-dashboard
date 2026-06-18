@@ -31,7 +31,8 @@ describe("contract - audit-sensitive update responses", () => {
                 operator: "EQUALS",
                 value: "11300"
               }
-            ]
+            ],
+            configVersion: 1
           })
         }),
         { params: Promise.resolve({ appId }) }
@@ -58,7 +59,8 @@ describe("contract - audit-sensitive update responses", () => {
                 operator: "GREATER_THAN",
                 value: "5000"
               }
-            ]
+            ],
+            configVersion: 1
           })
         }),
         { params: Promise.resolve({ appId }) }

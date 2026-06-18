@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import { validateRuntimeSecurityConfig } from "@/lib/security/runtime-security";
 import { appBootTrace } from "@/lib/runtime-trace";
+import { createAuthCode } from "@/lib/auth/auth-code-store";
 
 validateRuntimeSecurityConfig();
 
@@ -143,10 +144,55 @@ function resolveFromIdToken(
   }
 }
 
+// Request-scoped: holds the one-time auth code generated during the jwt callback
+// so it can be appended to the final redirect URL.
+let pendingAuthCode: string | null = null;
+
+/**
+ * Consumes the pending auth code (if any) generated during the current request's jwt callback.
+ * Returns the code and resets the module state. Called by the [...nextauth] route handler.
+ */
+export function consumePendingAuthCode(): string | null {
+  const code = pendingAuthCode;
+  pendingAuthCode = null;
+  return code;
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   debug: process.env.AUTH_DEBUG_SSO === "true",
   trustHost: true, // 👈 IMPORTANT
   useSecureCookies,
+  cookies: {
+    sessionToken: {
+      name: useSecureCookies ? "__Secure-authjs.session-token" : "authjs.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/api/auth",
+        secure: useSecureCookies,
+      },
+    },
+    callbackUrl: {
+      name: useSecureCookies ? "__Secure-authjs.callback-url" : "authjs.callback-url",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/api/auth",
+        secure: useSecureCookies,
+        maxAge: 120,
+      },
+    },
+    csrfToken: {
+      name: useSecureCookies ? "__Secure-authjs.csrf-token" : "authjs.csrf-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/api/auth",
+        secure: useSecureCookies,
+        maxAge: 120,
+      },
+    },
+  },
   providers: [
     MicrosoftEntraID({
       clientId: process.env.AUTH_MICROSOFT_ENTRA_ID_ID!,
@@ -155,11 +201,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       client: {
         token_endpoint_auth_method: "client_secret_post",
       },
+      authorization: {
+        params: {
+          response_mode: "query",
+        },
+      },
     }),
   ],
   session: {
     strategy: "jwt",
-    // 24-hour session expiry (production should verify this is appropriate)
+    // Session cookie supports server-side page rendering (auth() calls).
+    // Client-side uses Bearer tokens from sessionStorage (15-min TTL, refreshed every 10 min).
     maxAge: 24 * 60 * 60,
   },
   pages: {
@@ -175,6 +227,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       resolveOidFallback(tokenRecord, token, account);
       resolveEmailFallback(token, tokenRecord, user);
       resolveFromIdToken(tokenRecord, token, accountRecord);
+
+      // On initial sign-in (account is present), generate a one-time auth code
+      // so the client can exchange it for a Bearer token without needing cookies.
+      if (account) {
+        const oid = typeof tokenRecord.oid === "string" ? tokenRecord.oid : null;
+        const email = typeof token.email === "string" ? token.email : null;
+        pendingAuthCode = createAuthCode({ oid, email });
+      }
 
       return token;
     },

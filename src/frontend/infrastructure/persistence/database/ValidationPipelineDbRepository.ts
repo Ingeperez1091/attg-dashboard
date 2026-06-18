@@ -122,7 +122,7 @@ export class ValidationPipelineDbRepository implements IValidationPipelineReposi
   }
 
   async upsertValidationResults(_items: UpsertValidationResultInput[]): Promise<void> {
-    return Promise.resolve();
+    return;
   }
 
   async listValidationResults(query: ValidationResultsQuery): Promise<ValidationResultsPage> {
@@ -188,12 +188,13 @@ export class ValidationPipelineDbRepository implements IValidationPipelineReposi
 
   async executeLocalPipeline(input: CreatePipelineRunInput): Promise<void> {
     await this.sqlClient.query(
-      `EXEC app.usp_ExecutePipelineRun @runId = @runId, @applicationId = @applicationId, @triggerSource = @triggerSource, @actorUserId = @actorUserId;`,
+      `EXEC app.usp_ExecutePipelineRun @runId = @runId, @applicationId = @applicationId, @triggerSource = @triggerSource, @actorUserId = @actorUserId, @previewSessionId = @previewSessionId;`,
       {
         runId: input.runId,
         applicationId: input.applicationId,
         triggerSource: input.triggerSource,
-        actorUserId: input.actorUserId
+        actorUserId: input.actorUserId,
+        previewSessionId: input.previewSessionId ?? null
       }
     );
   }

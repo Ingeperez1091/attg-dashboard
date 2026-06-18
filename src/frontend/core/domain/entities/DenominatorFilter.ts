@@ -41,6 +41,8 @@ export interface UpdateDenominatorFiltersInput {
   applicationId: string;
   actorUserId: string;
   rules: UpdateDenominatorFilterRuleInput[];
+  changeType?: string;
+  overrideReason?: string | null;
 }
 
 export interface DenominatorImpactSnapshot {

@@ -1,7 +1,7 @@
 <!--
   Sync Impact Report
   ====================
-  Version change: 1.0.0 -> 1.1.0 (architecture and maintainability principles amendment)
+  Version change: 1.1.0 -> 1.2.0 (OWASP Top 10:2021 security standards added to Principle V)
   
 -->
 
@@ -135,6 +135,119 @@ roles: `administrator`, `application_owner`, `viewer`.
   attacks.
 - A super-admin user MUST be seeded on initial deployment with
   access to all features for all applications.
+
+#### OWASP Top 10 (2021) Compliance Standards
+
+All application code, infrastructure, and deployment
+configurations MUST be designed and reviewed against the OWASP
+Top 10:2021 risk categories. Violations MUST be treated as
+blocking defects.
+
+1. **A01:2021 – Broken Access Control**
+   - Every API route and server action MUST enforce role-based
+     access checks before processing. Default-deny: access MUST
+     be explicitly granted, never assumed.
+   - Direct object references (e.g., ApplicationId, UserId) MUST
+     be validated against the caller's authorized scope.
+   - CORS policy MUST whitelist only approved origins; wildcard
+     (`*`) is prohibited in non-local environments.
+
+2. **A02:2021 – Cryptographic Failures**
+   - All data in transit MUST use TLS 1.2+ (HTTPS enforced).
+   - Connection strings, secrets, and tokens MUST be stored in
+     Azure Key Vault — never in source code, environment files
+     committed to VCS, or plain-text configuration.
+   - Sensitive data at rest (PII, credentials) MUST use Azure SQL
+     Transparent Data Encryption (TDE) and column-level encryption
+     where applicable.
+
+3. **A03:2021 – Injection**
+   - All database queries MUST use parameterized statements or
+     stored procedures with parameterized inputs. String
+     concatenation of user input into SQL is prohibited.
+   - Dynamic SQL (e.g., in `usp_BuildFilteredDenominator`,
+     `usp_PreviewDenominatorImpact`) MUST validate column names
+     against the `DenominatorModels`/`ApplicationModels` metadata
+     whitelist and MUST use `sp_executesql` with typed parameters.
+   - User input rendered in HTML MUST be escaped or sanitized to
+     prevent Cross-Site Scripting (XSS).
+   - Command injection vectors (OS commands, LDAP, XML external
+     entities) MUST be mitigated by never passing untrusted input
+     to system interpreters.
+
+4. **A04:2021 – Insecure Design**
+   - Security controls MUST be designed into features from the
+     specification phase, not bolted on after implementation.
+   - Threat modeling MUST be considered for data flows involving
+     external inputs (numerator API, denominator load, rule
+     configuration endpoints).
+   - Business logic abuse scenarios (e.g., mass rule deletion,
+     preview endpoint DoS) MUST have rate-limiting or quota
+     controls.
+
+5. **A05:2021 – Security Misconfiguration**
+   - Default credentials, sample accounts, and debug endpoints
+     MUST NOT exist in non-development environments.
+   - HTTP security headers MUST be set: `Strict-Transport-Security`,
+     `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+     `Content-Security-Policy` (restrictive).
+   - Stack traces and internal error details MUST NOT be exposed
+     in production error responses. Use generic error messages
+     with correlation IDs for debugging.
+   - Terraform and deployment configurations MUST follow
+     least-privilege for service accounts, managed identities,
+     and network access rules.
+
+6. **A06:2021 – Vulnerable and Outdated Components**
+   - All dependencies (npm packages, Terraform providers, GitHub
+     Actions, base images) MUST be actively maintained and free
+     of known critical/high CVEs.
+   - `npm audit`, Dependabot alerts, and Terraform provider
+     version checks MUST be included in CI quality gates.
+   - End-of-life runtimes or frameworks MUST NOT be introduced.
+
+7. **A07:2021 – Identification and Authentication Failures**
+   - Authentication MUST use Azure AD SSO with MSAL; custom
+     credential stores are prohibited.
+   - Session tokens MUST be securely issued, stored (HTTP-only,
+     Secure, SameSite cookies), and invalidated on logout.
+   - Brute-force protections (account lockout, throttling) MUST
+     be provided by the identity provider (Azure AD).
+   - Multi-factor authentication MUST be enforced at the Azure AD
+     tenant level for all dashboard users.
+
+8. **A08:2021 – Software and Data Integrity Failures**
+   - CI/CD pipelines MUST verify artifact integrity (e.g.,
+     pinned action versions with SHA, lockfile integrity checks).
+   - Database migrations MUST be idempotent and version-tracked;
+     ad-hoc DDL changes in production are prohibited.
+   - Deserialization of untrusted data (JSON payloads from
+     numerator API) MUST use strict schema validation (Zod) with
+     explicit type coercion — no eval or unsafe parsing.
+
+9. **A09:2021 – Security Logging and Monitoring Failures**
+   - All authentication events (login, logout, failed attempts),
+     authorization failures (403), and data modification actions
+     (rule changes, user admin, pipeline triggers) MUST be logged
+     with timestamp, actor, action, and target resource.
+   - Logs MUST NOT contain secrets, tokens, or full PII; use
+     correlation IDs and masked identifiers.
+   - Audit trails (`app.RuleChangeAudit`, pipeline run metadata)
+     MUST be tamper-evident and retained per the organization's
+     data retention policy.
+   - Alerting MUST be configured for anomalous patterns (e.g.,
+     repeated 403s, bulk deletion attempts).
+
+10. **A10:2021 – Server-Side Request Forgery (SSRF)**
+    - The application MUST NOT make outbound HTTP requests to
+      URLs derived from user input without strict allowlist
+      validation.
+    - ADF linked services and pipeline connections MUST use
+      managed identity authentication and private endpoints
+      where available — no user-controllable connection targets.
+    - Internal metadata endpoints (e.g., Azure IMDS) MUST be
+      unreachable from application code paths that handle
+      external input.
 
 ### VI. Incremental Delivery
 
@@ -304,6 +417,7 @@ defined above.
 - The minimum test coverage percentage for business logic is 80%
 - The solutions should be flexibe, easy to maintain, extend, and include new applications
 - Follow Zero-Trust threat modeling.
+- Follow OWASP security standards.
 - TLS-only endpoints on Azure App Service and Azure SQL to mitigate man-in-the-middle risk.
 - Parameterized SQL access through `mssql` request bindings to mitigate SQL injection.
 - Strict response security headers configured in Next.js.

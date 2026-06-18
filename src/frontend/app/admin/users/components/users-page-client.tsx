@@ -22,7 +22,7 @@ export function UsersPageClient({
   availableApplications,
   availableRoles,
   currentUserRole,
-}: UsersPageClientProps): ReactElement {
+}: Readonly<UsersPageClientProps>): ReactElement {
   const [users, setUsers] = useState<AdminUserDto[]>(initialUsers);
   const [searchTerm, setSearchTerm] = useState("");
   const [includeInactive, setIncludeInactive] = useState(false);
@@ -84,7 +84,7 @@ export function UsersPageClient({
       setUsers(body.users);
     } catch {
       // Fallback to full page reload if API call fails
-      window.location.reload();
+      globalThis.location.reload();
     }
   }
 
@@ -157,14 +157,13 @@ export function UsersPageClient({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
-          <div
-            role="group"
+          <fieldset
             aria-label="User status filter"
             className="app-segmented"
           >
             <button
               type="button"
-              className={`btn btn--sm app-segmented__button${!includeInactive ? " is-active" : ""}`}
+              className={`btn btn--sm app-segmented__button${includeInactive ? "" : " is-active"}`}
               onClick={() => setIncludeInactive(false)}
               aria-pressed={!includeInactive}
             >
@@ -178,7 +177,7 @@ export function UsersPageClient({
             >
               All
             </button>
-          </div>
+          </fieldset>
         </div>
 
         <UserListTable

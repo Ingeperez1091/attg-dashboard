@@ -126,17 +126,21 @@ export interface InsertRuleChangeAuditInput {
   actorUserId: string;
   previousRulesJson: string;
   newRulesJson: string;
+  changeType?: string;
+  overrideReason?: string | null;
 }
 
 export async function insertRuleChangeAudit(
   client: SqlClient,
   input: InsertRuleChangeAuditInput
 ): Promise<void> {
-  const params: Record<string, unknown> = { ...input };
+  const changeType = input.changeType ?? 'Update';
+  const overrideReason = input.overrideReason ?? null;
+  const params: Record<string, unknown> = { ...input, changeType, overrideReason };
   await executeParameterizedQuery(client, `
     INSERT INTO app.RuleChangeAudit
-    (AuditId, ApplicationId, ActorUserId, PreviousRulesJson, NewRulesJson, ChangedAt)
+    (AuditId, ApplicationId, ActorUserId, PreviousRulesJson, NewRulesJson, ChangeType, OverrideReason, ChangedAt)
     VALUES
-    (@auditId, @applicationId, @actorUserId, @previousRulesJson, @newRulesJson, SYSUTCDATETIME());
+    (@auditId, @applicationId, @actorUserId, @previousRulesJson, @newRulesJson, @changeType, @overrideReason, SYSUTCDATETIME());
   `, params);
 }

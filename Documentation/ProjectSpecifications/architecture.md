@@ -4,7 +4,7 @@
 > **Status**: Draft  
 > **PRD Sources**: `Documentation/StakeholderDocuments/ApplicationGoals.md`, `Documentation/StakeholderDocuments/ApplicationFeatures.md`, `Documentation/StakeholderDocuments/AUTOMATED_SOLUTION_ARCHITECTURE.md`, `Documentation/StakeholderDocuments/BUSINESS_RULES_AND_ETL_SUMMARY.md`  
 > **Constitution**: `.specify/memory/constitution.md` v1.0.0  
-> **Changelog**: v1.0.0 — External denominator database: `vw_USTaxBTS_FY26_MaxACD` resides on an independent Mercury-managed SQL server and may be unreachable from the ATTG_Usage database; architecture now mandates a local materialized copy (`stage.DenominatorSnapshot`) loaded weekly by ADF; all stored procedures and pipeline steps operate exclusively on the local copy; added assumption A25. v1.2.0 — Detailed ADF pipeline architecture from notebook ETL analysis; added PL_DenomLoad_Weekly, PL_MetricsProcessing, PL_MetricsOrchestrator pipelines; added per-app denominator rule tables from notebooks; added PipelineRuns, ValidationResults, MatchedRecords, FilterRuleSnapshots tables; performance optimisation notes (SP over Data Flows, OPENJSON, indexed views, parallel execution). v1.1.0 — Added Denominator Model metadata-driven architecture (DenominatorModels, DenominatorFilterRules); added AdoptionSettings section; updated ADF pipeline for dual-model lookups.
+> **Changelog**: v1.5.0 — Added Section 4.8 (Impact Preview — Option D): staged rules table (`stage.DenominatorFilterRulesPreview`), existing pipeline SP reuse with `@previewSessionId` parameter, SSE streaming for result delivery, ADF direct call for async execution (MVP), stale run recovery (30min threshold), scale path (ADF → Worker, SSE → SignalR); supports EPIC-BQM-017 Feature A. v1.4.0 — Added Section 4.7 (Concurrency Control for Rules Configuration): optimistic concurrency via ConfigVersions, advisory edit sessions via ConfigEditSessions, conflict resolution UX; added tables ConfigVersions and ConfigEditSessions; supports EPIC-BQM-017 Feature C. v1.2.0 — Detailed ADF pipeline architecture from notebook ETL analysis; added PL_DenomLoad_Weekly, PL_MetricsProcessing, PL_MetricsOrchestrator pipelines; added per-app denominator rule tables from notebooks; added PipelineRuns, ValidationResults, MatchedRecords, FilterRuleSnapshots tables; performance optimisation notes (SP over Data Flows, OPENJSON, indexed views, parallel execution). v1.1.0 — Added Denominator Model metadata-driven architecture (DenominatorModels, DenominatorFilterRules); added AdoptionSettings section; updated ADF pipeline for dual-model lookups. v1.0.0 — External denominator database: `vw_USTaxBTS_FY26_MaxACD` resides on an independent Mercury-managed SQL server and may be unreachable from the ATTG_Usage database; architecture now mandates a local materialized copy (`stage.DenominatorSnapshot`) loaded weekly by ADF; all stored procedures and pipeline steps operate exclusively on the local copy; added assumption A25.
 
 ---
 
@@ -320,6 +320,8 @@ All Azure resources MUST be provisioned and managed via Terraform under `infra/t
 | `ValidationResults` | Per-record validation outcome | ResultId, PipelineRunId, StageId, ApplicationId, RecordKey, Status (Valid/Invalid/FilteredOut), ErrorMessage |
 | `MatchedRecords` | Numerator records that passed all gates | MatchedId, PipelineRunId, ApplicationId, NumeratorKey, DenominatorKey, RevenueAmount |
 | `FilterRuleSnapshots` | Point-in-time copy of rules used per run | SnapshotId, PipelineRunId, RuleType (Numerator/Denominator), RulesJson |
+| `ConfigVersions` | Optimistic concurrency version per application per rule scope | ApplicationId, RuleScope, Version, LastModifiedBy, LastModifiedAt |
+| `ConfigEditSessions` | Advisory edit session tracking for concurrent editing awareness | SessionId, ApplicationId, RuleScope, UserId, SessionStart, LastHeartbeat, IsActive |
 
 #### Schema: `stage`
 
@@ -724,6 +726,197 @@ Parameterised on `ApplicationId`. Steps aligned with the notebook ETL patterns:
 - Raw source data is preserved in staging tables before any transformation.
 - Pipeline run metadata (start, end, status, counts) is persisted in `app.PipelineRuns` for observability.
 
+### 4.7 Concurrency Control for Rules Configuration
+
+Rules configuration (denominator and numerator filter rules) supports concurrent editing by multiple users through a three-layer mechanism that prioritizes data consistency without blocking workflows.
+
+#### 4.7.1 Optimistic Concurrency Control (OCC)
+
+Each application's rules configuration maintains a monotonic version counter tracked in `app.ConfigVersions`:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `ApplicationId` | UNIQUEIDENTIFIER | FK → `Applications` |
+| `RuleScope` | NVARCHAR(32) | `'denominator'` or `'numerator'` |
+| `Version` | INT | Monotonic counter, starts at 1 |
+| `LastModifiedBy` | NVARCHAR(128) | User who last saved |
+| `LastModifiedAt` | DATETIME2 | Timestamp of last save |
+
+**Protocol:**
+1. `GET /api/filters/:scope/:appId` returns the current `configVersion` in the response.
+2. `PUT /api/filters/:scope/:appId` requires the client to include the version they loaded (via `configVersion` body field or `If-Match` header).
+3. The stored procedure (or API transaction) performs: `UPDATE app.ConfigVersions SET Version = Version + 1 WHERE ApplicationId = @appId AND RuleScope = @scope AND Version = @clientVersion`. If `@@ROWCOUNT = 0`, a version mismatch occurred → return HTTP 409 with current state.
+4. The version increment and rules persistence occur in a **single SQL transaction** — atomic and consistent.
+
+**409 Conflict Response Schema:**
+```json
+{
+  "error": "CONFLICT_VERSION_MISMATCH",
+  "currentVersion": 6,
+  "currentRules": [...],
+  "lastModifiedBy": "user@example.com",
+  "lastModifiedAt": "2026-06-12T14:30:00Z"
+}
+```
+
+#### 4.7.2 Advisory Edit Sessions (Soft Locks)
+
+When a user opens the rules configuration form in edit mode, the UI registers a lightweight edit session:
+
+| Table: `app.ConfigEditSessions` | | |
+|---|---|---|
+| `SessionId` | UNIQUEIDENTIFIER | PK |
+| `ApplicationId` | UNIQUEIDENTIFIER | FK → Applications |
+| `RuleScope` | NVARCHAR(32) | `'denominator'` or `'numerator'` |
+| `UserId` | NVARCHAR(128) | Who is editing |
+| `SessionStart` | DATETIME2 | When editing began |
+| `LastHeartbeat` | DATETIME2 | Last client heartbeat |
+| `IsActive` | BIT | Active flag |
+
+**Lifecycle:**
+- **Register**: `POST /api/filters/:scope/:appId/edit-session` — creates session on form open (edit mode only, not read-only).
+- **Heartbeat**: `PATCH /api/filters/:scope/:appId/edit-session` — client sends every 60 seconds to keep session alive.
+- **Release**: `DELETE /api/filters/:scope/:appId/edit-session` — client sends on form close, navigation away, or browser `beforeunload`.
+- **Auto-expiry**: Sessions with `LastHeartbeat` older than 5 minutes are considered stale and cleaned up.
+
+**Notification to other users:**
+- `GET /api/filters/:scope/:appId` includes `activeEditors[]` in the response when other users have active sessions.
+- The UI displays a non-blocking advisory banner: "⚠️ [Display Name] is currently editing this configuration (started at HH:MM). Your changes may conflict."
+- Banner auto-dismisses when the other user's session is released.
+
+**Key properties:**
+- Advisory locks **never block** saves — they are informational only.
+- A `viewer` role never registers a session (read-only access).
+- Sessions are scoped to `(ApplicationId, RuleScope)` — editing denominator rules for App A does not affect numerator rules for App A.
+
+#### 4.7.3 Conflict Resolution UX
+
+When a 409 Conflict is received after save:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  ⚠️  Configuration Conflict Detected                        │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  [User X] saved a new version of this configuration at      │
+│  14:30 while you were editing.                              │
+│                                                              │
+│  ┌─────────────────────┐  ┌─────────────────────────────┐   │
+│  │  YOUR CHANGES       │  │  LATEST SAVED (v6)          │   │
+│  │                     │  │  by user.x@company.com      │   │
+│  │  + Rule: ESC IN     │  │  + Rule: ESC IN             │   │
+│  │    ('TAX','AUDIT')  │  │    ('TAX')                  │   │
+│  │  - Rule: Revenue >0 │  │  (no change)                │   │
+│  └─────────────────────┘  └─────────────────────────────┘   │
+│                                                              │
+│  ┌───────────────┐  ┌──────────────┐  ┌────────────────┐    │
+│  │  Reload &     │  │  Force-save  │  │    Cancel      │    │
+│  │  Re-edit      │  │  (admin)     │  │                │    │
+│  └───────────────┘  └──────────────┘  └────────────────┘    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Resolution options:**
+1. **Reload & Re-edit** — Discards local state, loads the latest version, user manually re-applies their intent.
+2. **Force-save** (administrator only) — Persists the user's version as the new current, overriding the conflicting save. Audit-logged with override reason in `app.RuleChangeAudit`.
+3. **Cancel** — Closes dialog, preserves unsaved form state for further editing or manual comparison.
+
+#### 4.7.4 Graceful Degradation
+
+If the edit session subsystem is unavailable (e.g., `ConfigEditSessions` table unreachable):
+- The system degrades to **pure optimistic concurrency** — saves are still protected by version checks.
+- Advisory banners become unavailable but data consistency is maintained.
+- No user action is blocked.
+
+---
+
+### 4.8 Impact Preview (Option D — Staged Rules + Existing Pipeline SP Reuse)
+
+The impact preview feature enables users to see the full effect of proposed denominator rule changes (adoption %, revenue share %, matched count, denominator count, denominator revenue) **before committing** them. The implementation reuses the entire existing pipeline with a single branching parameter — zero logic duplication.
+
+#### 4.8.1 Architecture Decision: Option D
+
+Four implementation options were evaluated (see `specs/012-impact-preview-dedup-concurrency/preview-options-comparison.md`):
+
+| Option | Approach | Rejected Because |
+|--------|----------|------------------|
+| A | TypeScript query builder (full metrics in app layer) | Reimplements pipeline logic in TS (~400 lines); permanent drift risk; degrades at scale |
+| B | Dedicated preview SP (`usp_PreviewDenominatorImpact`) | Reimplements entire pipeline in new SP (~500 lines T-SQL); violates "no SP testing" constraint |
+| C | SP + pre-aggregated indexed views | All cons of B + indexed view complexity; worst effort-to-benefit ratio |
+| **D** | **Staged rules table + existing pipeline SP reuse** | **Selected** — ~15 lines new SQL; zero logic duplication; guaranteed parity |
+
+**Key differentiator**: Option D runs the **identical production pipeline code path** with an optional `@previewSessionId` parameter. Preview results are definitionally identical to what committing the rules and triggering a pipeline would produce.
+
+#### 4.8.2 Staging Table
+
+```sql
+stage.DenominatorFilterRulesPreview (
+    PreviewId          UNIQUEIDENTIFIER PK DEFAULT NEWID(),
+    SessionId          UNIQUEIDENTIFIER NOT NULL,   -- scopes rules to one preview
+    ApplicationId      UNIQUEIDENTIFIER NOT NULL,
+    DenominatorModelId UNIQUEIDENTIFIER NOT NULL FK → app.DenominatorModels,
+    Operator           NVARCHAR(32) NOT NULL,
+    Value              NVARCHAR(512) NOT NULL,
+    RuleOrder          INT NOT NULL,
+    CreateDate         DATETIME2 DEFAULT SYSUTCDATETIME(),
+    ExpiresAt          DATETIME2 DEFAULT DATEADD(HOUR, 1, SYSUTCDATETIME())
+)
+```
+
+Indexes: `IX_DenomPreview_Session (SessionId, ApplicationId)`, `IX_DenomPreview_Expiry (ExpiresAt)`.
+
+#### 4.8.3 SP Modifications
+
+- **`usp_ExecutePipelineRun`** — add optional `@previewSessionId UNIQUEIDENTIFIER = NULL`; pass through to `usp_BuildFilteredDenominator`.
+- **`usp_BuildFilteredDenominator`** — add optional `@previewSessionId UNIQUEIDENTIFIER = NULL`; when non-NULL, read rules from `stage.DenominatorFilterRulesPreview WHERE SessionId = @previewSessionId` instead of `app.DenominatorFilterRules`. All downstream SQL generation is unchanged.
+
+Total new SQL: ~15 lines (one `IF/ELSE` branch + parameter pass-through).
+
+#### 4.8.4 Execution Strategy — ADF Direct Call (MVP)
+
+The preview reuses the existing `PipelineOrchestrationService` which supports two execution modes:
+
+| Mode | When | Mechanism |
+|------|------|-----------|
+| **ADF** | Production / staging environments | `ADFPipelineClient` POSTs to ADF webhook; ADF runs SP on managed compute |
+| **Local** | Development / test | `ValidationPipelineDbRepository.executeLocalPipeline()` calls SP directly |
+
+For preview, the same service is invoked with `triggerSource: "Preview"` and `previewSessionId`. No new infrastructure required.
+
+#### 4.8.5 Result Delivery — Server-Sent Events (SSE)
+
+`POST /api/filters/denominator/:appId/preview` returns `Content-Type: text/event-stream`:
+
+```
+event: status
+data: {"stage": "processing", "previewRunId": "..."}
+
+event: complete
+data: {"current": {...}, "projected": {...}, "delta": {...}, "warnings": [...]}
+```
+
+- **Local mode**: SSE connection held open while SP executes (3–8s); result streamed immediately on completion.
+- **ADF mode**: Server-side polling inside SSE stream; client sees clean event flow.
+- **No client-side polling logic** — entire preview lifecycle is a single HTTP transaction.
+
+#### 4.8.6 Concurrency & Cleanup
+
+- **No concurrency guard for preview**: Previews are session-isolated (`SessionId`) and non-destructive (`TriggerSource = 'Preview'`). Multiple concurrent previews for the same app operate independently.
+- **Stale run recovery (production guard)**: Production pipeline concurrency guard auto-fails runs stuck > 30 minutes, preventing permanent blocking from SP timeouts or ADF crashes.
+- **Staged rules TTL**: `ExpiresAt` column + SQL Agent job purges orphaned rows hourly.
+- **Preview data retention**: Preview `PipelineRuns` and `MetricSnapshots` rows purged after 24h.
+
+#### 4.8.7 Scale Path
+
+| Phase | Execution | Result Delivery | Trigger |
+|-------|-----------|-----------------|--------|
+| **MVP** | ADF direct call / local fire-and-forget | SSE | 5 apps, < 20 users |
+| **Growth** | Same ADF (retries handle volume) | Same SSE | 20–50 apps |
+| **Scale** | Background worker (Azure Function + Queue) | Same SSE | 50+ concurrent previews; ADF contention |
+| **Enterprise** | Worker + queue per region | SignalR (if proxy buffering issues) | 100+ concurrent, multi-region |
+
+The client-facing SSE contract never changes — only the execution backend evolves.
+
 ---
 
 ## 5. Data Flow Detail
@@ -881,11 +1074,93 @@ The following rules are derived from the actual Jupyter notebook analysis (`Stak
 | Layer | Control |
 |-------|---------|
 | **Authentication** | Azure AD SSO (Extended-MVP and beyond). Anonymous access prohibited. |
+| **Token Transport** | Bearer token via `Authorization` header; stored in client `sessionStorage`. Cookies are NOT used for API auth (WAF incompatibility — see S7.1). |
 | **Authorization** | Three roles: `administrator`, `application_owner`, `viewer`. Exactly one role per user. |
 | **API Protection** | All endpoints check auth; 401/403 on failure; no internal detail leakage. |
 | **Input Sanitization** | External inputs sanitized against SQL injection and XSS. |
 | **Audit** | All tables carry audit columns. Filter rule changes audit-logged with user, previous value, timestamp. |
 | **Data Privacy** | Role-based data scoping: owners/viewers see only assigned applications. |
+
+### 7.1 Authentication Flow — Bearer Token with sessionStorage
+
+The application uses a **Bearer token + sessionStorage** pattern instead of traditional auth cookies. This design decision was driven by WAF (Web Application Firewall) compatibility constraints.
+
+#### Problem: WAF Cookie Interference
+
+Azure Front Door / third-party WAF appliances in the corporate network inspect, strip, or rewrite `Set-Cookie` headers for security policy enforcement. This causes:
+
+1. Large JWT-based auth cookies (Auth.js/NextAuth) to be silently stripped or truncated by the WAF.
+2. `SameSite`, `Secure`, and `Domain` cookie attributes to be rewritten, breaking cross-origin flows.
+3. Intermittent auth failures where the cookie is present in the browser but not forwarded through the WAF proxy.
+
+#### Solution: Token in Authorization Header
+
+```
+┌──────────┐       ┌────────────────┐       ┌──────────────────┐
+│  Browser │──1──▶│ Azure AD Login  │──2──▶│ /api/auth/callback│
+│          │       │ (OAuth2 PKCE)  │       │ (sets auth code)  │
+└──────────┘       └────────────────┘       └──────────────────┘
+     │                                              │
+     │◀───────────── redirect ──────────────────────┘
+     │
+     ├──3──▶ POST /api/auth/exchange  (sends auth code)
+     │       ◀────── { token: "Bearer <AES-256-GCM encrypted>" }
+     │
+     ├──4──  sessionStorage.setItem("attg_session_token", token)
+     │
+     ├──5──▶ GET /api/filters/denominator/:appId
+     │       Authorization: Bearer <token>
+     │       (WAF passes standard Authorization headers unmodified)
+     └─────
+```
+
+**Steps**:
+
+1. User authenticates with Azure AD via OAuth2 PKCE flow.
+2. Azure AD redirects to `/api/auth/callback` with an authorization code. The server stores a short-lived auth code in an in-memory store.
+3. Client calls `POST /api/auth/exchange` with the auth code to receive an encrypted session token.
+4. Client stores the token in `sessionStorage` (tab-scoped; cleared on tab close).
+5. All subsequent API requests include `Authorization: Bearer <token>`. WAF appliances pass standard `Authorization` headers without modification.
+
+#### Why sessionStorage (not localStorage)
+
+| Concern | sessionStorage | localStorage |
+|---------|---------------|--------------|
+| Tab isolation | ✅ Per-tab scope | ❌ Shared across tabs |
+| XSS exposure window | Cleared on tab close | Persists indefinitely |
+| Multi-tab UX | Each tab independently authenticated | Single token shared |
+
+#### Token Structure
+
+- **Encryption**: AES-256-GCM (payload encrypted, not just signed)
+- **Integrity**: HMAC-SHA256 over ciphertext
+- **Payload**: `{ userId, role, isActive, applications[], oid, email }` — not readable from `sessionStorage` or network inspection
+- **TTL**: Configurable via `SESSION_TOKEN_TTL_SECONDS` (default: 8 hours)
+- **Rotation**: Supports zero-downtime secret rotation via `SESSION_TOKEN_SECRET_PREVIOUS` env var
+
+#### Session Resolution Priority
+
+The server resolves identity in this order (first match wins):
+
+1. **Bearer token** from `Authorization` header (`resolveFromBearerToken`) — primary, WAF-safe
+2. **Auth.js cookie session** (`resolveFromAuthSession`) — fallback for legacy/dev flows
+3. **Lightweight session ID cookie** (`attg_sid`, ~80 bytes HMAC-signed) — server-component page renders only
+
+#### Key Source Files
+
+| File | Purpose |
+|------|---------|
+| `src/frontend/lib/auth/bearer-token.ts` | Extracts & verifies Bearer token from Authorization header |
+| `src/frontend/lib/auth/session-token.ts` | AES-256-GCM token encrypt/decrypt with secret rotation |
+| `src/frontend/lib/auth/session.ts` | Multi-strategy session resolution (Bearer → Cookie → SID) |
+| `src/frontend/lib/auth/auth-code-store.ts` | Short-lived auth code store for exchange flow |
+| `src/frontend/lib/auth/useSession.ts` | Client React hook; reads token from `sessionStorage` |
+
+#### API Contract Implications
+
+- All API contracts specify `Authorization: Bearer <token>` — never `Cookie`.
+- Clients MUST NOT send auth tokens via cookies, query strings, or custom headers.
+- Server returns `401 Unauthorized` if the Authorization header is missing or the token is invalid/expired.
 
 ---
 

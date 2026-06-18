@@ -17,6 +17,12 @@ const ROLE_BADGE: Record<RoleName, string> = {
   viewer: "badge badge--viewer",
 };
 
+function formatAppCount(count: number): string {
+  if (count === 0) return "—";
+  if (count === 1) return "1 app";
+  return `${count} apps`;
+}
+
 interface UserListTableProps {
   users: AdminUserDto[];
   currentUserRole: RoleName;
@@ -38,7 +44,7 @@ export function UserListTable({
   loading,
   onEditUser,
   onToggleActive,
-}: UserListTableProps): ReactElement {
+}: Readonly<UserListTableProps>): ReactElement {
   const canAct = currentUserRole === "administrator";
   const activeAdministratorCount = users.filter(
     (candidate) => candidate.isActive && candidate.role === "administrator"
@@ -77,11 +83,7 @@ export function UserListTable({
               <span className={ROLE_BADGE[user.role]}>{ROLE_LABEL[user.role]}</span>
             </td>
             <td className="app-cell-meta">
-              {user.applications.length === 0
-                ? "—"
-                : user.applications.length === 1
-                  ? "1 app"
-                  : `${user.applications.length} apps`}
+              {formatAppCount(user.applications.length)}
             </td>
             <td>
               <span className={user.isActive ? "badge badge--active" : "badge badge--inactive"}>

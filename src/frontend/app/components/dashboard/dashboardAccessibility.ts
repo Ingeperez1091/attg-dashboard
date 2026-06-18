@@ -16,7 +16,7 @@ export function resolveDashboardFilterNavigation(filters: string[], selectedFilt
     case "Home":
       return filters[0] ?? null;
     case "End":
-      return filters[filters.length - 1] ?? null;
+      return filters.at(-1) ?? null;
     default:
       return null;
   }

@@ -63,7 +63,8 @@ describe("contract - filter authorization", () => {
             operator: "GREATER_OR_EQUAL",
             value: "1000"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
     const body = await response.json();
@@ -88,7 +89,8 @@ describe("contract - filter authorization", () => {
             operator: "LESS_OR_EQUAL",
             value: "90000"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
     const body = await response.json();

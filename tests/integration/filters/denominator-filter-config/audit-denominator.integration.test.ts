@@ -29,7 +29,8 @@ describe("integration - denominator rule audit trail", () => {
               operator: "EQUALS",
               value: "11420"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId }) }
@@ -59,7 +60,8 @@ describe("integration - denominator rule audit trail", () => {
               operator: "EQUALS",
               value: "11420"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId }) }
@@ -76,7 +78,8 @@ describe("integration - denominator rule audit trail", () => {
               operator: "NOT_EQUALS",
               value: "Closed"
             }
-          ]
+          ],
+          configVersion: 2
         })
       }),
       { params: Promise.resolve({ appId }) }
@@ -113,7 +116,8 @@ describe("integration - denominator rule audit trail", () => {
               operator: "EQUALS",
               value: "11300"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId }) }
@@ -130,7 +134,8 @@ describe("integration - denominator rule audit trail", () => {
               operator: "EQUALS",
               value: "Active"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId: appId2 }) }
@@ -157,7 +162,8 @@ describe("integration - denominator rule audit trail", () => {
               operator: "EQUALS",
               value: "blocked"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId }) }

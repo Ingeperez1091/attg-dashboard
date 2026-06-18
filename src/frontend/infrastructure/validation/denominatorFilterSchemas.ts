@@ -35,7 +35,10 @@ export const denominatorRuleInputSchema = z.object({
 });
 
 export const updateDenominatorFiltersSchema = z.object({
-  rules: z.array(denominatorRuleInputSchema)
+  rules: z.array(denominatorRuleInputSchema),
+  configVersion: z.number().int().positive().optional(),
+  forceOverride: z.boolean().optional(),
+  overrideReason: z.string().min(1).max(500).optional(),
 });
 
 export const adoptionSettingsUpdateSchema = z.object({

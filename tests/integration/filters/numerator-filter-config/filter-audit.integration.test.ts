@@ -25,9 +25,10 @@ describe("integration - numerator filter audit", () => {
             operator: "GREATER_OR_EQUAL",
             value: "50000"
           }
-        ]
-      })
-    }), { params: Promise.resolve({ appId }) });
+        ],
+          configVersion: 1
+        })
+      }), { params: Promise.resolve({ appId }) });
     const body = await response.json();
 
     expect(response.status).toBe(200);

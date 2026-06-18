@@ -22,7 +22,7 @@ export function AdoptionSettingsPanel({
   userDirectory = [],
   saving = false,
   onSave
-}: AdoptionSettingsPanelProps) {
+}: Readonly<AdoptionSettingsPanelProps>) {
   const [adoptionLevel, setAdoptionLevel] = useState<"Engagement" | "Client">(
     settings?.adoptionLevel ?? "Engagement"
   );

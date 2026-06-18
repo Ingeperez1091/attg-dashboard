@@ -31,7 +31,8 @@ describe("integration - numerator filter performance", () => {
               operator: "GREATER_THAN",
               value: "50000"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }), {
         params: Promise.resolve({ appId })

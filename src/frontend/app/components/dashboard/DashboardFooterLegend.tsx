@@ -10,10 +10,12 @@ function formatTimestamp(value: string | null): string {
     return "Awaiting refresh";
   }
 
-  return new Date(value).toLocaleString();
+  // Database stores UTC (SYSUTCDATETIME); ensure parsing treats it as UTC
+  const utcValue = value.endsWith("Z") || value.includes("+") ? value : value + "Z";
+  return new Date(utcValue).toLocaleString();
 }
 
-export function DashboardFooterLegend({ legend, refreshTimestamp }: DashboardFooterLegendProps) {
+export function DashboardFooterLegend({ legend, refreshTimestamp }: Readonly<DashboardFooterLegendProps>) {
   return (
     <footer className="dashboard-footer-legend">
       <span>ETD = Engagement to date</span>

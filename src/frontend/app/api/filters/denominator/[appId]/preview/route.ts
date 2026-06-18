@@ -1,13 +1,15 @@
-import { AppError, toStatusCode } from "@/lib/api/error-handler";
+import { toStatusCode } from "@/lib/api/error-handler";
 import {
-  getRuntimeAdoptionSettingsRepository,
-  getRuntimeDenominatorFilterRepository,
-  getRuntimeDenominatorModelRepository,
-  getRuntimeRepositories
+  getRuntimeDenominatorPreviewRepository,
+  getRuntimeMetricsRepository,
+  getRuntimeRepositories,
+  getRuntimeValidationPipelineRepository,
+  getRuntimeADFPipelineClient
 } from "@/infrastructure/persistence/runtime/repositories";
 import { requireFilterWriteScope } from "@/infrastructure/middleware/filterAuthorizationMiddleware";
-import { DenominatorFilterService } from "@/core/application/services/DenominatorFilterService";
-import { updateDenominatorFiltersSchema } from "@/infrastructure/validation/denominatorFilterSchemas";
+import { previewRequestSchema } from "@/infrastructure/validation/previewRequestSchema";
+import { DenominatorPreviewService } from "@/core/application/services/denominatorPreviewService";
+import { createSSEStream, SSE_HEADERS } from "@/lib/sse/sseStreamHelper";
 import {
   createOperationContext,
   logOperationStart,
@@ -40,10 +42,14 @@ export async function POST(
 
   try {
     const { appId } = await context.params;
-    await requireFilterWriteScope(request, appId, repositories);
 
+    // Auth check BEFORE SSE stream — errors returned as standard JSON
+    const session = await requireFilterWriteScope(request, appId, repositories);
+    opCtx.callerUserId = session.userId;
+
+    // Validate request body BEFORE SSE stream — errors returned as standard JSON
     const body = await request.json();
-    const parsed = updateDenominatorFiltersSchema.safeParse(body);
+    const parsed = previewRequestSchema.safeParse(body);
 
     if (!parsed.success) {
       const failures = parsed.error.errors.map((e) => ({
@@ -60,29 +66,39 @@ export async function POST(
       }, { status: 400 });
     }
 
-    const service = new DenominatorFilterService(
-      getRuntimeDenominatorFilterRepository(),
-      getRuntimeDenominatorModelRepository(),
-      getRuntimeAdoptionSettingsRepository()
+    // Create SSE stream and begin async pipeline execution
+    const { stream, controller } = createSSEStream();
+
+    const previewService = new DenominatorPreviewService(
+      getRuntimeDenominatorPreviewRepository(),
+      getRuntimeValidationPipelineRepository(),
+      getRuntimeMetricsRepository(),
+      getRuntimeADFPipelineClient()
     );
 
-    const preview = await service.previewRules(appId, parsed.data.rules);
+    // Execute preview in a microtask so the stream is returned immediately
+    void (async () => {
+      try {
+        await previewService.executePreview(
+          appId,
+          session.userId,
+          parsed.data.rules,
+          controller
+        );
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "Preview calculation failed.";
+        controller.sendError({ message, previewRunId: "" });
+      }
+    })();
+
     logOperationSuccess(opCtx, 200, Date.now() - start);
-    return Response.json(preview, { status: 200 });
+    return new Response(stream, {
+      status: 200,
+      headers: SSE_HEADERS
+    });
   } catch (error: unknown) {
     const status = toStatusCode(error);
     logOperationError(opCtx, error, status, Date.now() - start);
-
-    if (error instanceof AppError && error.status === 400) {
-      return Response.json({
-        error: "VALIDATION_ERROR",
-        message: error.message,
-        details: {
-          code: error.code
-        }
-      }, { status: 400 });
-    }
-
     return Response.json(toContractError(error), { status });
   }
 }

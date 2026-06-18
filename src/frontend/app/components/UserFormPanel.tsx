@@ -10,7 +10,7 @@ import { ValidationSummary } from "./ValidationSummary";
 import { Spinner } from "./Spinner";
 import { useUserAuditMetadata } from "./hooks/useUserAuditMetadata";
 
-interface UserFormPanelProps {
+type UserFormPanelProps = Readonly<{
   mode: "create" | "edit";
   /** When mode is "edit", the current user data to pre-fill */
   user?: AdminUserDto;
@@ -20,7 +20,7 @@ interface UserFormPanelProps {
   onClose: () => void;
   /** Called with the created/updated userId on success */
   onSuccess?: (userId: string) => void;
-}
+}>;
 
 function validateFields(fields: {
   username: string;

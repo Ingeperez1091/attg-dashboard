@@ -1,5 +1,6 @@
 import tsParser from "@typescript-eslint/parser";
 import tsPlugin from "@typescript-eslint/eslint-plugin";
+import reactPlugin from "eslint-plugin-react";
 
 export default [
   {
@@ -21,7 +22,8 @@ export default [
       sourceType: "module"
     },
     plugins: {
-      "@typescript-eslint": tsPlugin
+      "@typescript-eslint": tsPlugin,
+      "react": reactPlugin
     },
     rules: {
       "@typescript-eslint/no-unused-vars": [
@@ -30,7 +32,18 @@ export default [
           argsIgnorePattern: "^_",
           varsIgnorePattern: "^_"
         }
-      ]
+      ],
+      "react/no-danger": "error"
+    }
+  },
+  {
+    // Allow the single hardcoded dangerouslySetInnerHTML in RootLayout (THEME_INIT_SCRIPT).
+    files: ["src/frontend/app/layout.tsx"],
+    plugins: {
+      "react": reactPlugin
+    },
+    rules: {
+      "react/no-danger": "off"
     }
   }
 ];

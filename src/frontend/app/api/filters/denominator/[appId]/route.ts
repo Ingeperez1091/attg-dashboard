@@ -2,7 +2,8 @@ import { AppError, toStatusCode } from "@/lib/api/error-handler";
 import {
   getRuntimeDenominatorFilterRepository,
   getRuntimeDenominatorModelRepository,
-  getRuntimeRepositories
+  getRuntimeRepositories,
+  getRuntimeConfigVersionRepository
 } from "@/infrastructure/persistence/runtime/repositories";
 import { logMutationEvent } from "@/lib/api/request-logger";
 import {
@@ -17,7 +18,9 @@ import {
   requireFilterWriteScope
 } from "@/infrastructure/middleware/filterAuthorizationMiddleware";
 import { DenominatorFilterService } from "@/core/application/services/DenominatorFilterService";
+import { ConfigVersionService } from "@/core/application/services/configVersionService";
 import { updateDenominatorFiltersSchema } from "@/infrastructure/validation/denominatorFilterSchemas";
+import { RoleName } from "@/core/domain/entities/Role";
 
 function toContractError(error: unknown): { error: string; message: string } {
   const status = toStatusCode(error);
@@ -32,6 +35,80 @@ function toContractError(error: unknown): { error: string; message: string } {
   };
 }
 
+function validateForceSave(
+  role: RoleName,
+  overrideReason: string | undefined
+): Response | null {
+  if (role !== "administrator") {
+    return Response.json({
+      error: "Forbidden",
+      message: "Force-save is restricted to administrators."
+    }, { status: 403 });
+  }
+  if (!overrideReason) {
+    return Response.json({
+      error: "VALIDATION_ERROR",
+      message: "overrideReason is required when forceOverride is true.",
+      details: { code: "MISSING_OVERRIDE_REASON" }
+    }, { status: 400 });
+  }
+  return null;
+}
+
+async function enforceOptimisticConcurrency(
+  configVersionService: ConfigVersionService,
+  appId: string,
+  configVersion: number,
+  userId: string
+): Promise<Response | null> {
+  const versionResult = await configVersionService.checkAndIncrement(
+    appId,
+    "Denominator",
+    configVersion,
+    userId
+  );
+
+  if (versionResult.success) return null;
+
+  if (versionResult.conflict) {
+    return Response.json({
+      error: "VERSION_CONFLICT",
+      message: "Configuration was modified by another user since you loaded it.",
+      details: {
+        currentVersion: versionResult.conflict.currentVersion,
+        currentRules: versionResult.conflict.currentRules,
+        lastModifiedBy: versionResult.conflict.lastModifiedBy,
+        lastModifiedAt: versionResult.conflict.lastModifiedAt,
+      }
+    }, { status: 409 });
+  }
+
+  return Response.json({
+    error: "NotFound",
+    message: "Application configuration not found."
+  }, { status: 404 });
+}
+
+function toAppErrorResponse(error: unknown): Response {
+  if (error instanceof AppError && error.code === "FIELD_NOT_FILTERABLE") {
+    return Response.json({
+      error: "VALIDATION_ERROR",
+      message: error.message,
+      details: { code: "FIELD_NOT_FILTERABLE" }
+    }, { status: 400 });
+  }
+
+  if (error instanceof AppError && error.status === 400) {
+    return Response.json({
+      error: "VALIDATION_ERROR",
+      message: error.message,
+      details: { code: error.code }
+    }, { status: 400 });
+  }
+
+  return Response.json(toContractError(error), { status: toStatusCode(error) });
+}
+
 export async function GET(
   request: Request,
   context: { params: Promise<{ appId: string }> }
@@ -43,7 +120,7 @@ export async function GET(
 
   try {
     const { appId } = await context.params;
-    await requireFilterReadScope(request, appId, repositories);
+    const session = await requireFilterReadScope(request, appId, repositories);
 
     const service = new DenominatorFilterService(
       getRuntimeDenominatorFilterRepository(),
@@ -51,8 +128,21 @@ export async function GET(
     );
     const ruleset = await service.getRulesByApplicationId(appId);
 
+    // Augment response with configVersion and activeEditors
+    const configVersionService = new ConfigVersionService(getRuntimeConfigVersionRepository());
+    const version = await configVersionService.getVersion(appId, "Denominator");
+
+    const { getRuntimeConfigEditSessionRepository } = await import("@/infrastructure/persistence/runtime/repositories");
+    const editSessionRepo = getRuntimeConfigEditSessionRepository();
+    const activeEditors = await editSessionRepo.getActiveEditors(appId, "Denominator", session.userId);
+
     logOperationSuccess(opCtx, 200, Date.now() - start);
-    return Response.json(ruleset, { status: 200 });
+    return Response.json({
+      ...ruleset,
+      configVersion: version?.version ?? null,
+      activeEditors,
+      userRole: session.role,
+    }, { status: 200 });
   } catch (error: unknown) {
     const status = toStatusCode(error);
     logOperationError(opCtx, error, status, Date.now() - start);
@@ -92,42 +182,62 @@ export async function PUT(
       }, { status: 400 });
     }
 
+    // Require configVersion for optimistic concurrency control
+    if (parsed.data.configVersion === undefined || parsed.data.configVersion === null) {
+      return Response.json({
+        error: "VALIDATION_ERROR",
+        message: "configVersion is required.",
+        details: {
+          code: "MISSING_CONFIG_VERSION"
+        }
+      }, { status: 400 });
+    }
+
+    const configVersionService = new ConfigVersionService(getRuntimeConfigVersionRepository());
+
+    // Force-save path (admin only)
+    if (parsed.data.forceOverride) {
+      const forceError = validateForceSave(session.role, parsed.data.overrideReason);
+      if (forceError) return forceError;
+
+      const forceResult = await configVersionService.forceIncrement(appId, "Denominator", session.userId);
+      if (!forceResult) {
+        return Response.json({
+          error: "NotFound",
+          message: "Application configuration not found."
+        }, { status: 404 });
+      }
+    } else {
+      // Standard OCC check
+      const occError = await enforceOptimisticConcurrency(
+        configVersionService,
+        appId,
+        parsed.data.configVersion,
+        session.userId
+      );
+      if (occError) return occError;
+    }
+
     const service = new DenominatorFilterService(
       getRuntimeDenominatorFilterRepository(),
       getRuntimeDenominatorModelRepository()
     );
-    const updated = await service.updateRules(appId, session.userId, parsed.data.rules);
+    const auditOptions = parsed.data.forceOverride
+      ? { changeType: "ForceOverride", overrideReason: parsed.data.overrideReason }
+      : undefined;
+    const updated = await service.updateRules(appId, session.userId, parsed.data.rules, auditOptions);
     logMutationEvent("denominator.filters.update", session.userId, {
       applicationId: appId,
       ruleCount: parsed.data.rules.length
     });
 
+    // Fetch new version to include in response
+    const newVersion = await configVersionService.getVersion(appId, "Denominator");
+
     logOperationSuccess(opCtx, 200, Date.now() - start);
-    return Response.json(updated, { status: 200 });
+    return Response.json({ ...updated, configVersion: newVersion?.version ?? null }, { status: 200 });
   } catch (error: unknown) {
-    const status = toStatusCode(error);
-    logOperationError(opCtx, error, status, Date.now() - start);
-
-    if (error instanceof AppError && error.status === 400 && error.code === "FIELD_NOT_FILTERABLE") {
-      return Response.json({
-        error: "VALIDATION_ERROR",
-        message: error.message,
-        details: {
-          code: "FIELD_NOT_FILTERABLE"
-        }
-      }, { status: 400 });
-    }
-
-    if (error instanceof AppError && error.status === 400) {
-      return Response.json({
-        error: "VALIDATION_ERROR",
-        message: error.message,
-        details: {
-          code: error.code
-        }
-      }, { status: 400 });
-    }
-
-    return Response.json(toContractError(error), { status });
+    logOperationError(opCtx, error, toStatusCode(error), Date.now() - start);
+    return toAppErrorResponse(error);
   }
 }

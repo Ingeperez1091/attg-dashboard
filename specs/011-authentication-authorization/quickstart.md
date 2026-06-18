@@ -20,6 +20,7 @@ Implement and validate authenticated access, role-based authorization, and appli
 1. Harden session resolution contract
 - Ensure protected requests require a resolved session principal.
 - Keep development fallback (`DEV_SESSION_USER_ID`) non-production-only.
+- Session resolution priority: Bearer token → Auth.js session → `attg_sid` cookie → dev bypass.
 
 2. Centralize role and active-status checks
 - Reuse/extend shared auth guard modules in `src/frontend/lib/auth`.
@@ -38,9 +39,13 @@ Implement and validate authenticated access, role-based authorization, and appli
 
 6. Wire production SSO path with Auth.js v5
 - Configure Auth.js with Microsoft Entra provider (`src/frontend/auth.ts`) and App Router auth handlers (`/api/auth/[...nextauth]`).
-- Add `/login` route for interactive sign-in and middleware redirects for protected routes.
+- Auth.js session cookie scoped to `/api/auth` (never sent on page navigations, avoids WAF interference).
+- After OAuth callback, client exchanges session cookie for AES-256-GCM encrypted Bearer token via `POST /api/auth/session-token`.
+- Token exchange also sets `attg_sid` (HMAC-signed userId cookie at path `/`) for server component authentication and clears the Auth.js session cookie.
+- Middleware is a plain `NextRequest` function (not wrapped with `auth()`) — does NOT refresh or set session cookies.
+- Add `/login` route for interactive sign-in.
 - Resolve internal principal from Entra `oid` and auto-bind missing `azureAdObjectId` on first successful login.
-- Keep `Authorization: Bearer <userId>` and non-production `DEV_SESSION_USER_ID` fallback behavior for automated tests/local API tooling.
+- Keep `Authorization: Bearer <token>` for all API calls and `attg_sid` cookie for server-rendered pages.
 
 ## Verification Sequence
 

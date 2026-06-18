@@ -20,7 +20,7 @@ type SqlAuthPoolConfig = {
 /**
  * Resolves the SQL request timeout from environment or returns a safe default.
  * The default mssql requestTimeout is 15000ms which is too short for stored
- * procedures like usp_ExecutePipelineRun (can take 20-60s with large datasets).
+ * procedures like usp_ExecutePipelineRun (can take 20-90s with large datasets).
  */
 function resolveRequestTimeout(): number {
   const envValue = getEnvValue("SQL_REQUEST_TIMEOUT_MS")?.trim();
@@ -30,8 +30,8 @@ function resolveRequestTimeout(): number {
       return parsed;
     }
   }
-  // Default: 120 seconds (sufficient for pipeline SP execution)
-  return 120_000;
+  // Default: 180 seconds (sufficient for pipeline SP execution)
+  return 180_000;
 }
 
 function getEnvValue(key: string): string | undefined {
@@ -122,11 +122,14 @@ function buildTrustedConnectionStringFromSqlEnv(): string | null {
     return null;
   }
 
-  const serverTarget = port !== undefined
-    ? `${server},${port}`
-    : instance
-      ? `${server}\\${instance}`
-      : server;
+  let serverTarget: string;
+  if (port !== undefined) {
+    serverTarget = `${server},${port}`;
+  } else if (instance) {
+    serverTarget = `${server}\\${instance}`;
+  } else {
+    serverTarget = server;
+  }
 
   const parts: string[] = [
     `Server=${serverTarget}`,
@@ -249,10 +252,28 @@ async function connectWithResolvedDriver(connectionString: string, trustedConnec
 }
 
 /**
+ * Validates that SQL encryption is enabled in production environments.
+ * Prevents accidental deployment with unencrypted database connections.
+ */
+function assertProductionEncryption(): void {
+  if (process.env.NODE_ENV !== "production") return;
+
+  const encrypt = getEnvValue("SQL_ENCRYPT")?.trim().toLowerCase();
+  // If encrypt is explicitly "false", refuse to start in production.
+  if (encrypt === "false") {
+    throw new Error(
+      "Security: SQL_ENCRYPT=false is not permitted in production. " +
+      "Set SQL_ENCRYPT=true to enforce TLS encryption for database connections."
+    );
+  }
+}
+
+/**
  * Returns a singleton SQL connection pool for the application process.
  */
 export function getSqlConnectionPool(): Promise<ConnectionPool> {
   if (!poolPromise) {
+    assertProductionEncryption();
     const trustedConnection = parseBooleanEnv(getEnvValue("TRUSTED_CONNECTION")) === true;
     poolPromise = (async () => {
       if (!trustedConnection) {
@@ -293,11 +314,4 @@ export function getSqlConnectionPool(): Promise<ConnectionPool> {
   }
 
   return poolPromise;
-}
-
-/**
- * Test utility to clear pool singleton between suites.
- */
-export function resetSqlConnectionPoolForTests(): void {
-  poolPromise = null;
 }

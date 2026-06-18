@@ -1,7 +1,6 @@
 import {
   NumeratorFilterRuleset,
   NumeratorModelField,
-  UpdateNumeratorFilterRuleInput,
   UpdateNumeratorFiltersInput
 } from "@/core/domain/entities/NumeratorFilter";
 import { INumeratorFilterRepository } from "@/core/domain/repositories/INumeratorFilterRepository";
@@ -74,7 +73,7 @@ export class NumeratorFilterDbRepository implements INumeratorFilterRepository {
     await deactivateActiveRulesByApplication(this.sqlClient, input.applicationId, input.actorUserId);
 
     for (let i = 0; i < input.rules.length; i += 1) {
-      const rule = input.rules[i] as UpdateNumeratorFilterRuleInput;
+      const rule = input.rules[i];
       await insertActiveRule(this.sqlClient, {
         ruleId: crypto.randomUUID(),
         applicationId: input.applicationId,
@@ -96,7 +95,9 @@ export class NumeratorFilterDbRepository implements INumeratorFilterRepository {
       applicationId: input.applicationId,
       actorUserId: input.actorUserId,
       previousRulesJson: JSON.stringify(previous?.rules ?? []),
-      newRulesJson: JSON.stringify(next.rules)
+      newRulesJson: JSON.stringify(next.rules),
+      changeType: input.changeType,
+      overrideReason: input.overrideReason
     });
 
     return next;

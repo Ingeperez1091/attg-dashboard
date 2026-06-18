@@ -4,7 +4,10 @@ import { SessionEntity as SessionUser } from "@/core/domain/entities/SessionEnti
 import { assertCanonicalRole } from "@/lib/auth/authorization";
 import { logSsoIdentityBindSuccess } from "@/lib/api/audit-logger";
 import { isDevBypassEnabled } from "@/lib/auth/dev-bypass";
+import { resolveFromBearerToken } from "@/lib/auth/bearer-token";
+import { verifySessionIdCookieValue, SESSION_ID_COOKIE_NAME } from "@/lib/auth/session-cookie";
 import { appBootTrace } from "@/lib/runtime-trace";
+import { cookies as nextCookies } from "next/headers";
 
 function isSsoDebugEnabled(): boolean {
   return process.env.AUTH_DEBUG_SSO === "true";
@@ -209,6 +212,35 @@ async function resolveFromAuthSession(repositories: RepositoryBundle): Promise<S
   return resolveFromRepositories(byEmail.userId, repositories);
 }
 
+async function resolveFromSessionIdCookie(request: Request, repositories: RepositoryBundle): Promise<SessionUser | null> {
+  const sidValue = parseCookieValue(request.headers.get("Cookie"), SESSION_ID_COOKIE_NAME);
+  if (!sidValue) {
+    return null;
+  }
+
+  const userId = verifySessionIdCookieValue(sidValue);
+  if (!userId) {
+    return null;
+  }
+
+  appBootTrace("session:resolveFromSessionIdCookie:verified", { userId: mask(userId) });
+  return resolveFromRepositories(userId, repositories);
+}
+
+async function resolveDevCookieUserId(request: Request): Promise<string | null> {
+  const fromHeader = parseCookieValue(request.headers.get("Cookie"), "dev_user_id");
+  if (fromHeader) {
+    return fromHeader;
+  }
+
+  try {
+    const cookieStore = await nextCookies();
+    return cookieStore.get("dev_user_id")?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Resolves session when available and returns null for unauthenticated requests.
  */
@@ -219,6 +251,16 @@ export async function getOptionalSession(
   const devBypassEnabled = isDevBypassEnabled();
   appBootTrace("session:getOptionalSession:start", { devBypassEnabled, hasRepositories: Boolean(repositories) });
 
+  // Priority 1: Bearer token from Authorization header (sessionStorage-based auth, WAF-safe)
+  if (repositories) {
+    const bearerSession = await resolveFromBearerToken(request, repositories);
+    if (bearerSession) {
+      appBootTrace("session:getOptionalSession:resolved-from-bearer");
+      return bearerSession;
+    }
+  }
+
+  // Priority 2: Auth.js cookie-based session (fallback, may be blocked by WAF)
   if (repositories) {
     const authSession = await resolveFromAuthSession(repositories);
     if (authSession) {
@@ -226,9 +268,17 @@ export async function getOptionalSession(
     }
   }
 
-  const cookieUserId = devBypassEnabled
-    ? parseCookieValue(request.headers.get("Cookie"), "dev_user_id")
-    : null;
+  // Priority 3: Lightweight session ID cookie (attg_sid) set after token exchange.
+  // This small HMAC-signed cookie is sent on page requests and allows server
+  // components to identify the user without the large Auth.js JWT.
+  if (repositories) {
+    const sidSession = await resolveFromSessionIdCookie(request, repositories);
+    if (sidSession) {
+      return sidSession;
+    }
+  }
+
+  const cookieUserId = devBypassEnabled ? await resolveDevCookieUserId(request) : null;
   const envUserId = devBypassEnabled ? process.env.DEV_SESSION_USER_ID : undefined;
   const userId = cookieUserId ?? envUserId ?? null;
 

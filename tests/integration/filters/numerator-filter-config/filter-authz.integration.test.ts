@@ -59,9 +59,10 @@ describe("integration - numerator filter authorization", () => {
             operator: "EQUALS",
             value: "100"
           }
-        ]
-      })
-    }), { params: Promise.resolve({ appId }) });
+        ],
+          configVersion: 1
+        })
+      }), { params: Promise.resolve({ appId }) });
 
     expect(response.status).toBe(403);
   });
@@ -82,9 +83,10 @@ describe("integration - numerator filter authorization", () => {
             operator: "GREATER_THAN",
             value: "100"
           }
-        ]
-      })
-    }), { params: Promise.resolve({ appId }) });
+        ],
+          configVersion: 1
+        })
+      }), { params: Promise.resolve({ appId }) });
 
     expect(response.status).toBe(200);
   });

@@ -26,9 +26,10 @@ describe("integration - denominator rule replacement", () => {
             operator: "EQUALS",
             value: "11420"
           }
-        ]
-      })
-    }), { params: Promise.resolve({ appId }) });
+        ],
+          configVersion: 1
+        })
+      }), { params: Promise.resolve({ appId }) });
 
     expect(firstPut.status).toBe(200);
 
@@ -42,7 +43,8 @@ describe("integration - denominator rule replacement", () => {
             operator: "NOT_EQUALS",
             value: "Closed"
           }
-        ]
+        ],
+        configVersion: 2
       })
     }), { params: Promise.resolve({ appId }) });
 

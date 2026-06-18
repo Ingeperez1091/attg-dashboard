@@ -51,7 +51,8 @@ describe("contract - audit identity propagation", () => {
               operator: "GREATER_OR_EQUAL",
               value: "25000"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId }) }

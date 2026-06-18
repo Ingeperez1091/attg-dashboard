@@ -1,6 +1,5 @@
 import { PipelineOrchestrationService } from "@/core/application/services/pipelineOrchestrationService";
-import { AppError } from "@/lib/api/error-handler";
-import { toPublicContractError, toStatusCode } from "@/lib/api/error-handler";
+import { AppError, toPublicContractError, toStatusCode } from "@/lib/api/error-handler";
 import { requireActive } from "@/lib/auth/guards";
 import { getRuntimeADFPipelineClient, getRuntimeRepositories, getRuntimeValidationPipelineRepository } from "@/infrastructure/persistence/runtime/repositories";
 import { triggerPipelineRequestSchema } from "@/infrastructure/validation/pipelineSchemas";
@@ -41,7 +40,18 @@ export async function POST(request: Request): Promise<Response> {
     const repository = getRuntimeValidationPipelineRepository();
     const latestRun = (await repository.listRunsByApplication(parsed.data.applicationId, 1))[0] ?? null;
     if (latestRun && (latestRun.status === "Queued" || latestRun.status === "Processing")) {
-      throw new AppError(409, "CONFLICT", "A pipeline run is already in progress for this application.");
+      const ageMs = Date.now() - new Date(latestRun.createDate).getTime();
+      const STALE_THRESHOLD_MS = 30 * 60 * 1000;
+      if (ageMs > STALE_THRESHOLD_MS) {
+        await repository.updateRunStatus({
+          runId: latestRun.runId,
+          status: "Failed",
+          actorUserId: session.userId,
+          errorMessage: "Auto-failed: exceeded 30-minute threshold (FR-010a stale recovery)"
+        });
+      } else {
+        throw new AppError(409, "CONFLICT", "A pipeline run is already in progress for this application.");
+      }
     }
 
     const service = new PipelineOrchestrationService(repository, getRuntimeADFPipelineClient());

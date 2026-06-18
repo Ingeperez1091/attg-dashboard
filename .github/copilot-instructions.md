@@ -1,6 +1,6 @@
 ﻿# DashboardTest Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-05-08
+Auto-generated from all feature plans. Last updated: 2026-06-14
 
 ## Active Technologies
 - T-SQL for Azure SQL Database, plus repository-aligned Next.js TypeScript API integration context + Azure SQL Database, Azure DevOps pipeline execution, external Mercury SQL access, Azure AD identity metadata, JSON numerator payloads (001-database-foundation)
@@ -18,6 +18,10 @@ Auto-generated from all feature plans. Last updated: 2026-05-08
 - Azure SQL Database (read-only consumption for this epic via existing metric snapshot and run-status paths) (010-dashboard-ui-grouping)
 - TypeScript 5.x (Next.js App Router) + Next.js 15, React 18, existing auth/session guard modules, Zod request validation, `mssql` parameterized SQL adapters (011-authentication-authorization)
 - Azure SQL (`app.Users`, `app.Roles`, `app.UserRoles`, `app.UserApplications`) with in-memory repositories for deterministic tests (011-authentication-authorization)
+- TypeScript 5.x on Node.js 24.x (Next.js 15 App Router); T-SQL (Azure SQL Database, SQL Server 2022-compatible) + Next.js App Router API routes, Zod request validation, `mssql` parameterized SQL bindings, existing session/auth abstraction, repository factory/runtime selection in `src/frontend/infrastructure/persistence/runtime` (012-impact-preview-dedup-concurrency)
+- Azure SQL Database (`app` schema: ConfigVersions, ConfigEditSessions, DenominatorFilterRules, NumeratorFilterRules, ValidationResults, PipelineRuns, RuleChangeAudit; `stage` schema: EngagementUsageRaw; views: `app.vw_DenominatorLocal`) (012-impact-preview-dedup-concurrency)
+- TypeScript 5.x on Node.js 24.x (Next.js 15 App Router); T-SQL (Azure SQL Database, SQL Server 2022-compatible) + Next.js 15, React 18, Zod, mssql (parameterized SQL), Motif web components, existing auth/session abstractions (012-impact-preview-dedup-concurrency)
+- Azure SQL Database (`app` + `stage` schemas); in-memory repositories for deterministic tests (012-impact-preview-dedup-concurrency)
 
 - T-SQL (Azure SQL Database - TSQL 2022) + Azure SQL Database, Azure DevOps (for migration execution), Entity Framework Core 8.x (for application layer ORM), dapper (for low-level SQL operations in seed scripts) (001-database-foundation)
 
@@ -38,9 +42,9 @@ tests/
 T-SQL (Azure SQL Database - TSQL 2022): Follow standard conventions
 
 ## Recent Changes
+- 012-impact-preview-dedup-concurrency: Added TypeScript 5.x on Node.js 24.x (Next.js 15 App Router); T-SQL (Azure SQL Database, SQL Server 2022-compatible) + Next.js 15, React 18, Zod, mssql (parameterized SQL), Motif web components, existing auth/session abstractions
+- 012-impact-preview-dedup-concurrency: Added TypeScript 5.x on Node.js 24.x (Next.js 15 App Router); T-SQL (Azure SQL Database, SQL Server 2022-compatible) + Next.js App Router API routes, Zod request validation, `mssql` parameterized SQL bindings, existing session/auth abstraction, repository factory/runtime selection in `src/frontend/infrastructure/persistence/runtime`
 - 011-authentication-authorization: Added TypeScript 5.x (Next.js App Router) + Next.js 15, React 18, existing auth/session guard modules, Zod request validation, `mssql` parameterized SQL adapters
-- 011-authentication-authorization: Added TypeScript 5.x (Next.js App Router) + Next.js 15, React 18, existing auth/session guard modules, Zod request validation, `mssql` parameterized SQL adapters
-- 010-dashboard-ui-grouping: Added TypeScript 5.x, Next.js App Router (frontend + API routes), SQL-backed metric persistence context from existing epics + Next.js, React, Motif web components, existing auth/session guards, existing metrics retrieval services/repositories, Zod validation, `mssql` bindings in data adapters
 
 
 <!-- MANUAL ADDITIONS START -->

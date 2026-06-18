@@ -82,7 +82,9 @@ export class DenominatorFilterDbRepository implements IDenominatorFilterReposito
       applicationId: input.applicationId,
       actorUserId: input.actorUserId,
       previousRulesJson: JSON.stringify(previous?.rules ?? []),
-      newRulesJson: JSON.stringify(next.rules)
+      newRulesJson: JSON.stringify(next.rules),
+      changeType: input.changeType,
+      overrideReason: input.overrideReason
     });
 
     return next;
