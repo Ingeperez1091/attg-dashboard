@@ -238,7 +238,9 @@ export function DenominatorFiltersContent({ initialAppId, initialEditing }: { in
       const body = await response.json();
 
       if (response.status === 409 && body.error === "VERSION_CONFLICT") {
-        setConflictState(body.details as ConflictDetails);
+        const details = body.details as ConflictDetails;
+        details.lastModifiedByName = resolveUserDisplayName(details.lastModifiedBy, users);
+        setConflictState(details);
         return;
       }
 
@@ -449,6 +451,7 @@ export function DenominatorFiltersContent({ initialAppId, initialEditing }: { in
           open={conflictState !== null}
           conflict={conflictState ?? { currentVersion: 0, currentRules: [], lastModifiedBy: "", lastModifiedAt: "" }}
           userRules={draftRules}
+          fieldLookup={modelFields}
           isAdmin={isAdmin}
           onReload={handleConflictReload}
           onForceSave={handleForceSave}

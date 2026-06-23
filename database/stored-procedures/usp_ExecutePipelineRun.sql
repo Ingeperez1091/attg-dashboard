@@ -33,7 +33,7 @@ BEGIN
                 NEWID() AS SnapshotId,
                 @runId AS PipelineRunId,
                 'Denominator' AS RuleType,
-                (
+                ISNULL((
                     SELECT
                         dfr.RuleId,
                         dfr.ApplicationId,
@@ -48,14 +48,14 @@ BEGIN
                     WHERE dfr.ApplicationId = @applicationId
                       AND dfr.IsActive = 1
                     FOR JSON PATH
-                ) AS RulesJson
+                ), '[]') AS RulesJson
             UNION ALL
             -- Numerator rules snapshot
             SELECT
                 NEWID() AS SnapshotId,
                 @runId AS PipelineRunId,
                 'Numerator' AS RuleType,
-                (
+                ISNULL((
                     SELECT
                         nfr.RuleId,
                         nfr.ApplicationId,
@@ -70,7 +70,7 @@ BEGIN
                     WHERE nfr.ApplicationId = @applicationId
                       AND nfr.IsActive = 1
                     FOR JSON PATH
-                ) AS RulesJson
+                ), '[]') AS RulesJson
         ) AS source
         ON target.PipelineRunId = source.PipelineRunId AND target.RuleType = source.RuleType
         WHEN MATCHED THEN

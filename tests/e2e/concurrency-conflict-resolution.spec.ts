@@ -44,7 +44,7 @@ test.describe("concurrency conflict resolution e2e", () => {
     await expect(dialog).toBeVisible({ timeout: 5000 });
 
     // Verify dialog contents
-    await expect(dialog.getByText(/modified by another user/i)).toBeVisible();
+    await expect(dialog.getByText(/saved by/i)).toBeVisible();
     await expect(dialog.getByRole("button", { name: /reload/i })).toBeVisible();
     await expect(dialog.getByRole("button", { name: /cancel/i })).toBeVisible();
 

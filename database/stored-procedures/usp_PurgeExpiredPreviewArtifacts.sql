@@ -32,7 +32,7 @@ BEGIN
     BEGIN
         DELETE TOP (@BatchSize) frs
         FROM app.FilterRuleSnapshots frs
-        INNER JOIN @DeletedRuns dr ON frs.RunId = dr.RunId;
+        INNER JOIN @DeletedRuns dr ON frs.PipelineRunId = dr.RunId;
 
         SET @BatchDeleted = @@ROWCOUNT;
         SET @TotalDeleted = @TotalDeleted + @BatchDeleted;
@@ -44,7 +44,7 @@ BEGIN
     BEGIN
         DELETE TOP (@BatchSize) vr
         FROM app.ValidationResults vr
-        INNER JOIN @DeletedRuns dr ON vr.RunId = dr.RunId;
+        INNER JOIN @DeletedRuns dr ON vr.PipelineRunId = dr.RunId;
 
         SET @BatchDeleted = @@ROWCOUNT;
         SET @TotalDeleted = @TotalDeleted + @BatchDeleted;
@@ -56,7 +56,7 @@ BEGIN
     BEGIN
         DELETE TOP (@BatchSize) mr
         FROM app.MatchedRecords mr
-        INNER JOIN @DeletedRuns dr ON mr.RunId = dr.RunId;
+        INNER JOIN @DeletedRuns dr ON mr.PipelineRunId = dr.RunId;
 
         SET @BatchDeleted = @@ROWCOUNT;
         SET @TotalDeleted = @TotalDeleted + @BatchDeleted;

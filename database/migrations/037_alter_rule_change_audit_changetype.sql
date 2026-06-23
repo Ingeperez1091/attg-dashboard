@@ -28,6 +28,7 @@ BEGIN
     ALTER TABLE app.RuleChangeAudit
     ADD OverrideReason NVARCHAR(500) NULL;
 END;
+GO
 
 -- Add CHECK constraint on ChangeType values
 IF NOT EXISTS (

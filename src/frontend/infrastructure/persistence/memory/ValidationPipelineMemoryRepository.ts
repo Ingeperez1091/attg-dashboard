@@ -62,7 +62,9 @@ export class ValidationPipelineMemoryRepository implements IValidationPipelineRe
   }
 
   async listRunsByApplication(applicationId: string, limit: number): Promise<PipelineRun[]> {
-    return getStore().runs.filter((item) => item.applicationId === applicationId).slice(0, limit);
+    return getStore().runs
+      .filter((item) => item.applicationId === applicationId && item.triggerSource !== "Preview")
+      .slice(0, limit);
   }
 
   async updateRunStatus(input: UpdatePipelineRunStatusInput): Promise<PipelineRun | null> {
@@ -144,12 +146,21 @@ export class ValidationPipelineMemoryRepository implements IValidationPipelineRe
   }
 
   async listValidationResults(query: ValidationResultsQuery): Promise<ValidationResultsPage> {
-    const filtered = getStore().validationResults.filter((row) => {
+    const store = getStore();
+    const previewRunIds = new Set(
+      store.runs
+        .filter((r) => r.triggerSource === "Preview")
+        .map((r) => r.runId)
+    );
+
+    const filtered = store.validationResults.filter((row) => {
       if (row.applicationId !== query.applicationId) {
         return false;
       }
 
-      if (query.runId && row.pipelineRunId !== query.runId) {
+      if (query.runId) {
+        if (row.pipelineRunId !== query.runId) return false;
+      } else if (previewRunIds.has(row.pipelineRunId)) {
         return false;
       }
 

@@ -1,28 +1,118 @@
 "use client";
 
 import { useState } from "react";
+import { DENOMINATOR_OPERATOR_LABELS } from "@/core/application/dto/denominator/DenominatorFilterDto";
 
 export interface ConflictDetails {
   currentVersion: number;
   currentRules: unknown[];
   lastModifiedBy: string;
+  lastModifiedByName?: string;
   lastModifiedAt: string;
+}
+
+export interface FieldLookupEntry {
+  denominatorModelId: string;
+  fieldName: string;
 }
 
 export interface ConflictResolutionDialogProps {
   open: boolean;
   conflict: ConflictDetails;
   userRules: unknown[];
+  fieldLookup?: FieldLookupEntry[];
   isAdmin: boolean;
   onReload: () => void;
   onForceSave: (reason: string) => void;
   onCancel: () => void;
 }
 
+interface NormalizedRule {
+  fieldName: string;
+  operator: string;
+  value: string;
+}
+
+function formatOperator(op: string): string {
+  return DENOMINATOR_OPERATOR_LABELS[op] ?? op;
+}
+
+function getStringField(rule: Record<string, unknown>, key: string): string {
+  const val = rule[key] ?? rule[key.charAt(0).toUpperCase() + key.slice(1)];
+  if (val === null || val === undefined) return "";
+  return typeof val === "string" ? val : JSON.stringify(val);
+}
+
+function resolveFieldName(
+  denominatorModelId: string | undefined,
+  fieldName: string | undefined,
+  lookup: FieldLookupEntry[]
+): string {
+  if (fieldName) return fieldName;
+  if (!denominatorModelId) return "Unknown field";
+  const match = lookup.find((f) => f.denominatorModelId === denominatorModelId);
+  return match?.fieldName ?? denominatorModelId;
+}
+
+function normalizeRules(
+  rules: unknown[],
+  lookup: FieldLookupEntry[]
+): NormalizedRule[] {
+  return rules.map((r) => {
+    const rule = r as Record<string, unknown>;
+    const modelId = getStringField(rule, "denominatorModelId") || undefined;
+    const name = getStringField(rule, "fieldName") || undefined;
+    return {
+      fieldName: resolveFieldName(modelId, name, lookup),
+      operator: getStringField(rule, "operator"),
+      value: getStringField(rule, "value"),
+    };
+  });
+}
+
+function buildDiffRows(
+  serverRules: NormalizedRule[],
+  userRules: NormalizedRule[]
+): { fieldName: string; serverValue: string; userValue: string; changed: boolean }[] {
+  const allFields = new Map<string, { server: string; user: string }>();
+
+  for (const r of serverRules) {
+    const existing = allFields.get(r.fieldName);
+    if (existing) {
+      existing.server = `${formatOperator(r.operator)} ${r.value}`;
+    } else {
+      allFields.set(r.fieldName, {
+        server: `${formatOperator(r.operator)} ${r.value}`,
+        user: "",
+      });
+    }
+  }
+
+  for (const r of userRules) {
+    const existing = allFields.get(r.fieldName);
+    if (existing) {
+      existing.user = `${formatOperator(r.operator)} ${r.value}`;
+    } else {
+      allFields.set(r.fieldName, {
+        server: "",
+        user: `${formatOperator(r.operator)} ${r.value}`,
+      });
+    }
+  }
+
+  return Array.from(allFields.entries()).map(([fieldName, vals]) => ({
+    fieldName,
+    serverValue: vals.server,
+    userValue: vals.user,
+    changed: vals.server !== vals.user,
+  }));
+}
+
 export function ConflictResolutionDialog({
   open,
   conflict,
   userRules,
+  fieldLookup = [],
   isAdmin,
   onReload,
   onForceSave,
@@ -56,6 +146,10 @@ export function ConflictResolutionDialog({
   }
 
   const modifiedDate = new Date(conflict.lastModifiedAt).toLocaleString();
+  const serverNormalized = normalizeRules(conflict.currentRules, fieldLookup);
+  const userNormalized = normalizeRules(userRules, fieldLookup);
+  const diffRows = buildDiffRows(serverNormalized, userNormalized);
+  const hasChanges = diffRows.some((row) => row.changed);
 
   return (
     <dialog
@@ -64,45 +158,54 @@ export function ConflictResolutionDialog({
       open={true}
     >
       <div className="dialog-panel conflict-dialog">
-        <h2 className="conflict-dialog__title">Version Conflict</h2>
+        <div className="conflict-dialog__header">
+          <span className="conflict-dialog__icon" aria-hidden="true">&#9888;</span>
+          <h2 className="conflict-dialog__title">Version Conflict</h2>
+        </div>
         <p className="conflict-dialog__message">
-          Configuration was modified by another user since you loaded it.
+          This configuration was saved by <strong>{conflict.lastModifiedByName ?? conflict.lastModifiedBy}</strong> on{" "}
+          <strong>{modifiedDate}</strong> (version {conflict.currentVersion}).
+          Review the differences below.
         </p>
 
-        <div className="conflict-dialog__details">
-          <div className="conflict-dialog__section">
-            <h3>Latest Saved Version</h3>
-            <dl className="conflict-dialog__meta">
-              <dt>Modified by</dt>
-              <dd>{conflict.lastModifiedBy}</dd>
-              <dt>Modified at</dt>
-              <dd>{modifiedDate}</dd>
-              <dt>Version</dt>
-              <dd>{conflict.currentVersion}</dd>
-            </dl>
-            <details className="conflict-dialog__rules-detail">
-              <summary>
-                Server rules ({conflict.currentRules.length} rule
-                {conflict.currentRules.length === 1 ? "" : "s"})
-              </summary>
-              <pre className="conflict-dialog__rules-json">
-                {JSON.stringify(conflict.currentRules, null, 2)}
-              </pre>
-            </details>
-          </div>
-
-          <div className="conflict-dialog__section">
-            <h3>Your Unsaved Changes</h3>
-            <details className="conflict-dialog__rules-detail">
-              <summary>
-                Your rules ({userRules.length} rule
-                {userRules.length === 1 ? "" : "s"})
-              </summary>
-              <pre className="conflict-dialog__rules-json">
-                {JSON.stringify(userRules, null, 2)}
-              </pre>
-            </details>
-          </div>
+        <div className="conflict-dialog__comparison">
+          <table className="conflict-dialog__table" aria-label="Rule comparison">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Server Value</th>
+                <th>Your Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {diffRows.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="conflict-dialog__empty">
+                    No rules to compare.
+                  </td>
+                </tr>
+              )}
+              {diffRows.map((row) => (
+                <tr
+                  key={row.fieldName}
+                  className={row.changed ? "conflict-dialog__row--changed" : ""}
+                >
+                  <td className="conflict-dialog__cell-field">{row.fieldName}</td>
+                  <td className="conflict-dialog__cell-value">
+                    {row.serverValue || <span className="conflict-dialog__absent">(not set)</span>}
+                  </td>
+                  <td className="conflict-dialog__cell-value">
+                    {row.userValue || <span className="conflict-dialog__absent">(not set)</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {hasChanges && (
+            <p className="conflict-dialog__hint">
+              Highlighted rows indicate differences between server and your changes.
+            </p>
+          )}
         </div>
 
         {showForceForm && (
@@ -133,8 +236,10 @@ export function ConflictResolutionDialog({
             className="btn btn--primary"
             onClick={onReload}
           >
-            Reload &amp; re-edit
+            Reload &amp; Re-Edit
           </button>
+
+          <div className="conflict-dialog__actions-spacer" />
 
           {isAdmin && !showForceForm && (
             <button
@@ -142,7 +247,7 @@ export function ConflictResolutionDialog({
               className="btn btn--warning"
               onClick={handleForceSaveClick}
             >
-              Force-save (admin)
+              Force-Save (Admin Only)
             </button>
           )}
 
@@ -152,7 +257,7 @@ export function ConflictResolutionDialog({
               className="btn btn--warning"
               onClick={handleConfirmForceSave}
             >
-              Confirm force-save
+              Confirm Force-Save
             </button>
           )}
 

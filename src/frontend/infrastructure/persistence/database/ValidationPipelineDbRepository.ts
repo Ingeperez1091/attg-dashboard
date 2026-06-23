@@ -78,6 +78,7 @@ export class ValidationPipelineDbRepository implements IValidationPipelineReposi
         SELECT TOP (@limit) *
         FROM app.PipelineRuns
         WHERE ApplicationId = @applicationId
+          AND TriggerSource <> 'Preview'
         ORDER BY CreateDate DESC;
       `,
       { applicationId, limit }

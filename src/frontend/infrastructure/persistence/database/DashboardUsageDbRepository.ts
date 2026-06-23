@@ -46,7 +46,7 @@ function toNumber(value: number | string | null): number {
 }
 
 function toNullableNumber(value: number | string | null): number | null {
-  if (value === null || typeof value === "undefined") {
+  if (value === null || value === undefined) {
     return null;
   }
 
@@ -111,10 +111,12 @@ export class DashboardUsageDbRepository implements DashboardUsageRepository {
           ) AS rn
         FROM app.MetricSnapshots ms
         INNER JOIN app.Applications app ON app.ApplicationId = ms.ApplicationId
+        INNER JOIN app.PipelineRuns pr ON pr.RunId = ms.RunId
         WHERE CAST(ms.ApplicationId AS NVARCHAR(36)) IN (
           SELECT TRIM(value) FROM STRING_SPLIT(@applicationIdsCsv, ',')
         )
           AND (@runId IS NULL OR ms.RunId = @runId)
+          AND (@runId IS NOT NULL OR pr.TriggerSource <> 'Preview')
       ),
       LatestInvestment AS (
         SELECT
@@ -184,6 +186,7 @@ export class DashboardUsageDbRepository implements DashboardUsageRepository {
         WHERE CAST(pr.ApplicationId AS NVARCHAR(36)) IN (
           SELECT TRIM(value) FROM STRING_SPLIT(@applicationIdsCsv, ',')
         )
+          AND pr.TriggerSource <> 'Preview'
       ),
       LatestCompleted AS (
         SELECT TOP 1 RunId
@@ -212,7 +215,7 @@ export class DashboardUsageDbRepository implements DashboardUsageRepository {
     );
 
     const row = result.rows[0];
-    if (!row || !row.ActiveRunId || !row.ActiveRunApplicationId || !row.ActiveRunStatus) {
+    if (!row?.ActiveRunId || !row.ActiveRunApplicationId || !row.ActiveRunStatus) {
       return {
         latestCompletedRunId: row?.LatestCompletedRunId ?? null,
         activeRun: null
