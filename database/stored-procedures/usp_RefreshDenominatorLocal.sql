@@ -1,5 +1,3 @@
-SET NOCOUNT ON;
-
 IF OBJECT_ID('stage.usp_RefreshDenominatorLocal', 'P') IS NOT NULL
 BEGIN
     DROP PROCEDURE stage.usp_RefreshDenominatorLocal;

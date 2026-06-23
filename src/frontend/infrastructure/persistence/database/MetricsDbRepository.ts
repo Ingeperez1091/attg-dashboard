@@ -133,8 +133,10 @@ export class MetricsDbRepository implements IMetricsRepository {
           ms.FilterRuleSnapshotId
         FROM app.MetricSnapshots ms
         INNER JOIN app.Applications a ON a.ApplicationId = ms.ApplicationId
+        INNER JOIN app.PipelineRuns pr ON pr.RunId = ms.RunId
         WHERE ms.ApplicationId = @applicationId
           AND (@runId IS NULL OR ms.RunId = @runId)
+          AND (@runId IS NOT NULL OR pr.TriggerSource <> 'Preview')
         ORDER BY ms.CalculationDate DESC, ms.CreateDate DESC;
       `,
       {
@@ -155,8 +157,10 @@ export class MetricsDbRepository implements IMetricsRepository {
       `
         SELECT COUNT(1) AS TotalCount
         FROM app.MetricSnapshots ms
+        INNER JOIN app.PipelineRuns pr ON pr.RunId = ms.RunId
         WHERE ms.ApplicationId = @applicationId
           AND (@runId IS NULL OR ms.RunId = @runId)
+          AND (@runId IS NOT NULL OR pr.TriggerSource <> 'Preview')
           AND (@fromDate IS NULL OR ms.CalculationDate >= @fromDate)
           AND (@toDate IS NULL OR ms.CalculationDate <= @toDate);
       `,
@@ -191,8 +195,10 @@ export class MetricsDbRepository implements IMetricsRepository {
           ms.FilterRuleSnapshotId
         FROM app.MetricSnapshots ms
         INNER JOIN app.Applications a ON a.ApplicationId = ms.ApplicationId
+        INNER JOIN app.PipelineRuns pr ON pr.RunId = ms.RunId
         WHERE ms.ApplicationId = @applicationId
           AND (@runId IS NULL OR ms.RunId = @runId)
+          AND (@runId IS NOT NULL OR pr.TriggerSource <> 'Preview')
           AND (@fromDate IS NULL OR ms.CalculationDate >= @fromDate)
           AND (@toDate IS NULL OR ms.CalculationDate <= @toDate)
         ORDER BY ms.CalculationDate DESC, ms.CreateDate DESC
@@ -243,6 +249,7 @@ export class MetricsDbRepository implements IMetricsRepository {
         FROM app.PipelineRuns pr
         LEFT JOIN app.MetricSnapshots ms ON ms.RunId = pr.RunId
         WHERE pr.RunId = @runId
+          AND pr.TriggerSource <> 'Preview'
         ORDER BY ms.CalculationDate DESC, ms.CreateDate DESC;
       `,
       { runId }

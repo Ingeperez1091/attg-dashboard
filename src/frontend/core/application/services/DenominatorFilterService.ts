@@ -41,7 +41,8 @@ export class DenominatorFilterService {
   async updateRules(
     applicationId: string,
     actorUserId: string,
-    rules: UpdateDenominatorFilterRuleInput[]
+    rules: UpdateDenominatorFilterRuleInput[],
+    options?: { changeType?: string; overrideReason?: string | null }
   ): Promise<DenominatorFilterRuleset> {
     const modelFields = await this.denominatorModelRepository.getFields();
     const validatedRules = this.validateAndNormalizeRules(modelFields, rules);
@@ -49,7 +50,9 @@ export class DenominatorFilterService {
     return this.denominatorFilterRepository.updateRules({
       applicationId,
       actorUserId,
-      rules: validatedRules
+      rules: validatedRules,
+      changeType: options?.changeType,
+      overrideReason: options?.overrideReason
     });
   }
 

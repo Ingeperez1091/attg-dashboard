@@ -9,9 +9,7 @@ interface LogoutButtonProps {
 
 /**
  * Logout button for authenticated users.
- * Signs out via server action and redirects to login page.
- * In dev bypass mode, POST to /api/auth/dev-logout to clear the dev_user_id cookie.
- * In SSO mode, use the NextAuth signOut server action.
+ * Clears sessionStorage token before signing out.
  */
 export function LogoutButton({ isDev = false }: LogoutButtonProps): ReactElement {
   if (isDev) {
@@ -23,6 +21,12 @@ export function LogoutButton({ isDev = false }: LogoutButtonProps): ReactElement
           className="btn btn--outline"
           style={{ padding: "0.3rem 0.7rem", fontSize: "0.8rem" }}
           title="Sign out of dev bypass"
+          onClick={() => {
+            try {
+              sessionStorage.removeItem("attg_session_token");
+              sessionStorage.removeItem("attg_session_user");
+            } catch { /* ignore */ }
+          }}
         >
           Logout (Dev)
         </button>
@@ -31,6 +35,10 @@ export function LogoutButton({ isDev = false }: LogoutButtonProps): ReactElement
   }
 
   const handleLogout = async () => {
+    try {
+      sessionStorage.removeItem("attg_session_token");
+      sessionStorage.removeItem("attg_session_user");
+    } catch { /* ignore */ }
     await logout();
   };
 

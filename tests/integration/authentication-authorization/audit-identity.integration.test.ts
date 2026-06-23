@@ -46,7 +46,8 @@ describe("integration - audit identity propagation", () => {
               operator: "EQUALS",
               value: "11300"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId }) }

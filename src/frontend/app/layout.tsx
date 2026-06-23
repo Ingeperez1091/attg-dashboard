@@ -1,15 +1,15 @@
 import { ReactNode } from "react";
+import { headers } from "next/headers";
 import './global.css';
 import { NavBar } from './components/NavBar';
 import { ThemeToggle } from "./components/ThemeToggle";
 import { LogoutButtonWrapper } from "./components/LogoutButtonWrapper";
-import { cookies } from "next/headers";
-import { getRuntimeRepositories } from "@/infrastructure/persistence/runtime/repositories";
-import Link from "next/link";
-import { getOptionalSession } from "@/lib/auth/session";
-import { createServerRequest } from "@/lib/auth/server-request";
-import Script from "next/script";
+import { SessionProvider } from "./providers/SessionProvider";
+import { AuthenticatedLayout } from "./providers/AuthenticatedLayout";
 
+// SECURITY: This constant MUST remain hardcoded with no dynamic content.
+// Any variable interpolation here creates a stored XSS vulnerability.
+// See SECURITY_AUDIT_OWASP.md A08 for context.
 const THEME_INIT_SCRIPT = `(function(){try{var k='attg-theme';var t=sessionStorage.getItem(k)||localStorage.getItem(k);if(t!=='light'&&t!=='dark'){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
 
 export const metadata = {
@@ -17,43 +17,36 @@ export const metadata = {
   description: 'US Tax Analytics & Business Transformation Dashboard',
 };
 
-export default async function RootLayout({ children }: { children: ReactNode }) {
-  const cookieStore = await cookies();
-  const devBypassUserId = process.env.NODE_ENV !== "production" ? cookieStore.get("dev_user_id")?.value : undefined;
-  const repositories = getRuntimeRepositories();
-  const session = await getOptionalSession(await createServerRequest(), repositories);
-  const role = session?.isActive ? session.role : null;
-
-  const canAccessHomeNav = role === "administrator";
-  const canAccessFiltersNav = role === "administrator" || role === "application_owner";
-  const canAccessUserAdminNav = role === "administrator";
+export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+  const headersList = await headers();
+  const nonce = headersList.get("x-csp-nonce") ?? "";
 
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <Script id="theme-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <script nonce={nonce} suppressHydrationWarning dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className="page-layout">
-        <header className="app-header">
-          <Link href="/" className="app-header__title">
-            ATTG Analytics Dashboard
-            <span className="app-header__tagline">US Tax BTS</span>
-          </Link>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            {devBypassUserId ? (
-              <LogoutButtonWrapper isDev={true} />
-            ) : session?.isActive ? (
+        <SessionProvider>
+          <header className="app-header">
+            <a href="/" className="app-header__title">
+              ATTG Analytics Dashboard {' '}
+              <span className="app-header__tagline"> US Tax BTS </span>
+            </a>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <LogoutButtonWrapper isDev={false} />
-            ) : null}
-            <ThemeToggle />
-          </div>
-        </header>
-        <NavBar
-          canAccessHome={canAccessHomeNav}
-          canAccessFilters={canAccessFiltersNav}
-          canAccessUserAdmin={canAccessUserAdminNav}
-        />
-        {children}
+              <ThemeToggle />
+            </div>
+          </header>
+          <NavBar
+            canAccessHome={true}
+            canAccessFilters={true}
+            canAccessUserAdmin={true}
+          />
+          <AuthenticatedLayout>
+            {children}
+          </AuthenticatedLayout>
+        </SessionProvider>
       </body>
     </html>
   );

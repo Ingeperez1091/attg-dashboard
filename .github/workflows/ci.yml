@@ -155,11 +155,25 @@ jobs:
 
       - name: Install dependencies (lockfile)
         if: needs.detect-capabilities.outputs.has_packagejson == 'true' && needs.detect-capabilities.outputs.has_lockfile == 'true'
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Install dependencies (no lockfile)
         if: needs.detect-capabilities.outputs.has_packagejson == 'true' && needs.detect-capabilities.outputs.has_lockfile != 'true'
-        run: npm install
+        run: npm install --ignore-scripts
+
+      - name: Verify lockfile integrity
+        if: needs.detect-capabilities.outputs.has_packagejson == 'true' && needs.detect-capabilities.outputs.has_lockfile == 'true'
+        shell: pwsh
+        run: |
+          # Ensure package-lock.json is in sync with package.json (no drift)
+          $lockBefore = Get-FileHash "package-lock.json" -Algorithm SHA256
+          npm install --package-lock-only --ignore-scripts 2>$null
+          $lockAfter = Get-FileHash "package-lock.json" -Algorithm SHA256
+          if ($lockBefore.Hash -ne $lockAfter.Hash) {
+            Write-Host "::error::package-lock.json is out of sync with package.json. Run 'npm install' locally and commit the updated lockfile."
+            exit 1
+          }
+          Write-Host "Lockfile integrity verified."
 
       - name: npm audit (fail on high/critical)
         if: needs.detect-capabilities.outputs.has_packagejson == 'true'
@@ -367,8 +381,23 @@ jobs:
         if: needs.detect-capabilities.outputs.has_e2e == 'true' && needs.detect-capabilities.outputs.has_lockfile != 'true'
         run: npm install
 
-      - name: Install Playwright browser
+      - name: Get Playwright version
         if: needs.detect-capabilities.outputs.has_e2e == 'true'
+        id: pw-version
+        run: |
+          $version = (node -e "console.log(require('./node_modules/@playwright/test/package.json').version)")
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Cache Playwright browsers
+        if: needs.detect-capabilities.outputs.has_e2e == 'true'
+        uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/AppData/Local/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
+
+      - name: Install Playwright browser
+        if: needs.detect-capabilities.outputs.has_e2e == 'true' && steps.pw-cache.outputs.cache-hit != 'true'
         run: npx playwright install chromium
 
       - name: Run e2e tests

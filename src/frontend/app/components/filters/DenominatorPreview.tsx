@@ -14,7 +14,7 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-export function DenominatorPreview({ preview, loading, error }: DenominatorPreviewProps) {
+export function DenominatorPreview({ preview, loading, error }: Readonly<DenominatorPreviewProps>) {
   return (
     <section className="card" style={{ marginTop: "16px" }}>
       <h2 className="card__title">Preview Impact</h2>

@@ -8,6 +8,9 @@ const CANONICAL_ROLES: ReadonlySet<SessionEntity["role"]> = new Set([
 ]);
 
 function hasApplicationScope(session: SessionEntity, applicationId: string): boolean {
+  if (session.role === "administrator") {
+    return true;
+  }
   return session.applications.includes("*") || session.applications.includes(applicationId);
 }
 

@@ -19,10 +19,6 @@ export function runWithTraceContext<T>(traceContext: TraceContext, callback: () 
   return traceStorage.run(traceContext, callback);
 }
 
-export function getCurrentTraceContext(): TraceContext | undefined {
-  return traceStorage.getStore();
-}
-
 export function appBootTrace(message: string, context?: Record<string, unknown>): void {
   if (!isAppBootTraceEnabled()) {
     return;

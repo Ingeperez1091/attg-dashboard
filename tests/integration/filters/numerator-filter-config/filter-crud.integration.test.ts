@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { GET, PUT } from "@/app/api/filters/numerator/[appId]/route";
-import { resetRuntimeRepositoriesForTests } from "@/infrastructure/persistence/runtime/repositories";
-import { resetRuntimeNumeratorFilterRepositoryForTests } from "@/infrastructure/persistence/runtime/repositories";
+import { resetRuntimeRepositoriesForTests , resetRuntimeNumeratorFilterRepositoryForTests } from "@/infrastructure/persistence/runtime/repositories";
+
 
 describe("integration - numerator filter CRUD", () => {
   const appId = "10000000-0000-0000-0000-000000000005";
@@ -24,9 +24,10 @@ describe("integration - numerator filter CRUD", () => {
             operator: "GREATER_THAN",
             value: "10000"
           }
-        ]
-      })
-    }), { params: Promise.resolve({ appId }) });
+        ],
+          configVersion: 1
+        })
+      }), { params: Promise.resolve({ appId }) });
     expect(firstPut.status).toBe(200);
 
     const secondPut = await PUT(new Request(`http://localhost/api/filters/numerator/${appId}`, {
@@ -39,9 +40,10 @@ describe("integration - numerator filter CRUD", () => {
             operator: "LESS_THAN",
             value: "20000"
           }
-        ]
-      })
-    }), { params: Promise.resolve({ appId }) });
+        ],
+          configVersion: 2
+        })
+      }), { params: Promise.resolve({ appId }) });
     const secondBody = await secondPut.json();
 
     expect(secondPut.status).toBe(200);

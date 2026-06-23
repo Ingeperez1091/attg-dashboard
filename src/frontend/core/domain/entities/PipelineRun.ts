@@ -4,7 +4,7 @@ export interface PipelineRun {
   runId: string;
   applicationId: string;
   status: PipelineRunStatus;
-  triggerSource: "API" | "ADF" | "Manual";
+  triggerSource: "API" | "ADF" | "Manual" | "Preview";
   startTime: string | null;
   endTime: string | null;
   totalRecordsIn: number | null;
@@ -24,8 +24,9 @@ export interface PipelineRun {
 export interface CreatePipelineRunInput {
   runId: string;
   applicationId: string;
-  triggerSource: "API" | "ADF" | "Manual";
+  triggerSource: "API" | "ADF" | "Manual" | "Preview";
   actorUserId: string;
+  previewSessionId?: string;
 }
 
 export interface UpdatePipelineRunStatusInput {

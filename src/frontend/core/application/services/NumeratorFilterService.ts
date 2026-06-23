@@ -26,7 +26,8 @@ export class NumeratorFilterService {
   async updateFilters(
     applicationId: string,
     actorUserId: string,
-    rules: UpdateNumeratorFilterRuleInput[]
+    rules: UpdateNumeratorFilterRuleInput[],
+    options?: { changeType?: string; overrideReason?: string | null }
   ): Promise<NumeratorFilterRuleset> {
     const modelFields = await this.repository.getModelByApplicationId(applicationId);
 
@@ -45,7 +46,9 @@ export class NumeratorFilterService {
     return this.repository.updateRules({
       applicationId,
       actorUserId,
-      rules: validatedRules
+      rules: validatedRules,
+      changeType: options?.changeType,
+      overrideReason: options?.overrideReason
     });
   }
 

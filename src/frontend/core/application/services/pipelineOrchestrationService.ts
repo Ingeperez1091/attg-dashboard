@@ -24,16 +24,25 @@ export class PipelineOrchestrationService {
 
   async triggerForApplication(
     session: SessionEntity,
-    input: { applicationId: string; triggerSource: "API" | "ADF" | "Manual" }
+    input: {
+      applicationId: string;
+      triggerSource: "API" | "ADF" | "Manual" | "Preview";
+      previewSessionId?: string;
+    }
   ): Promise<{ run: PipelineRun; executionMode: "adf" | "local" }> {
-    assertCanTriggerPipelineForApplication(session, input.applicationId);
+    // Preview runs bypass the production concurrency guard since they are
+    // session-isolated and do not affect committed data.
+    if (input.triggerSource !== "Preview") {
+      assertCanTriggerPipelineForApplication(session, input.applicationId);
+    }
 
     const runId = randomUUID();
     const run = await this.repository.createRun({
       runId,
       applicationId: input.applicationId,
       triggerSource: input.triggerSource,
-      actorUserId: session.userId
+      actorUserId: session.userId,
+      previewSessionId: input.previewSessionId
     });
 
     const executionMode = resolveExecutionMode(this.adfClient.executionMode);
@@ -43,14 +52,16 @@ export class PipelineOrchestrationService {
         runId,
         applicationId: input.applicationId,
         triggerSource: input.triggerSource,
-        actorUserId: session.userId
+        actorUserId: session.userId,
+        previewSessionId: input.previewSessionId
       });
     } else {
       void this.repository.executeLocalPipeline({
         runId,
         applicationId: input.applicationId,
         triggerSource: input.triggerSource,
-        actorUserId: session.userId
+        actorUserId: session.userId,
+        previewSessionId: input.previewSessionId
       });
     }
 

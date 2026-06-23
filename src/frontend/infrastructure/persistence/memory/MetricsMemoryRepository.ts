@@ -7,11 +7,13 @@ import {
 } from "@/core/domain/entities/MetricSnapshot";
 import { IMetricsRepository } from "@/core/domain/repositories/metricsRepository";
 import { createStoreAccessor } from "@/infrastructure/persistence/memory/sharedStore";
+import { PipelineRun } from "@/core/domain/entities/PipelineRun";
 
 type MetricsRepoStore = {
   snapshots: MetricSnapshot[];
   runSummaries: PipelineRunMetricsSummary[];
   syntheticFacts: SyntheticInvestmentFact[];
+  pipelineRuns?: PipelineRun[];
 };
 
 const sharedStoreFile = process.env.TEST_METRICS_REPOSITORY_STORE_FILE;
@@ -31,18 +33,32 @@ function isWithinRange(snapshot: MetricSnapshot, query: MetricHistoryQuery): boo
 
 export class MetricsMemoryRepository implements IMetricsRepository {
   async getLatestSnapshot(applicationId: string, runId?: string): Promise<MetricSnapshot | null> {
-    const snapshots = getStore().snapshots
+    const store = getStore();
+    const previewRunIds = new Set(
+      (store.pipelineRuns ?? [])
+        .filter((r) => r.triggerSource === "Preview")
+        .map((r) => r.runId)
+    );
+
+    const snapshots = store.snapshots
       .filter((snapshot) => snapshot.applicationId === applicationId)
-      .filter((snapshot) => (runId ? snapshot.runId === runId : true))
+      .filter((snapshot) => (runId ? snapshot.runId === runId : !previewRunIds.has(snapshot.runId)))
       .sort((a, b) => new Date(b.calculationDate).getTime() - new Date(a.calculationDate).getTime());
 
     return snapshots[0] ?? null;
   }
 
   async listSnapshotHistory(query: MetricHistoryQuery): Promise<MetricHistoryPage> {
-    const snapshots = getStore().snapshots
+    const store = getStore();
+    const previewRunIds = new Set(
+      (store.pipelineRuns ?? [])
+        .filter((r) => r.triggerSource === "Preview")
+        .map((r) => r.runId)
+    );
+
+    const snapshots = store.snapshots
       .filter((snapshot) => snapshot.applicationId === query.applicationId)
-      .filter((snapshot) => (query.runId ? snapshot.runId === query.runId : true))
+      .filter((snapshot) => (query.runId ? snapshot.runId === query.runId : !previewRunIds.has(snapshot.runId)))
       .filter((snapshot) => isWithinRange(snapshot, query))
       .sort((a, b) => new Date(b.calculationDate).getTime() - new Date(a.calculationDate).getTime());
 
@@ -58,12 +74,18 @@ export class MetricsMemoryRepository implements IMetricsRepository {
   }
 
   async getRunMetricsSummary(runId: string): Promise<PipelineRunMetricsSummary | null> {
-    const explicit = getStore().runSummaries.find((summary) => summary.runId === runId);
+    const store = getStore();
+    const run = (store.pipelineRuns ?? []).find((r) => r.runId === runId);
+    if (run?.triggerSource === "Preview") {
+      return null;
+    }
+
+    const explicit = store.runSummaries.find((summary) => summary.runId === runId);
     if (explicit) {
       return explicit;
     }
 
-    const snapshot = getStore().snapshots.find((row) => row.runId === runId);
+    const snapshot = store.snapshots.find((row) => row.runId === runId);
     if (!snapshot) {
       return null;
     }

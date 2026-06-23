@@ -4,7 +4,7 @@
 > **Status**: Draft  
 > **PRD Sources**: All `Documentation/StakeholderDocuments/*.md`  
 > **Constitution**: `.specify/memory/constitution.md` v1.0.0  
-> **Changelog**: v1.0.0 — Added A25 (External Denominator Database); updated A1 and A12 to reflect that the Mercury view resides on an external server and processing uses a local materialized copy. v1.2.0 — Added A18–A24 from notebook ETL analysis and ADF pipeline design. v1.1.0 — Added A12 (Shared Denominator Model), A13 (Denominator Filter Rules AND-Combined). v1.3.0 — Added A26–A31 from stakeholder goal and feature alignment review. v1.4.0 — Added A32–A34 for optional AI-assisted configuration and dashboard-analysis governance.
+> **Changelog**: v1.0.0 — Added A25 (External Denominator Database); updated A1 and A12 to reflect that the Mercury view resides on an external server and processing uses a local materialized copy. v1.2.0 — Added A18–A24 from notebook ETL analysis and ADF pipeline design. v1.1.0 — Added A12 (Shared Denominator Model), A13 (Denominator Filter Rules AND-Combined). v1.3.0 — Added A26–A31 from stakeholder goal and feature alignment review. v1.4.0 — Added A32–A34 for optional AI-assisted configuration and dashboard-analysis governance. v1.5.0 — Added A35 (Composite-Key Deduplication), A36 (Preview operates on local snapshot only), A37 (Optimistic Concurrency for Rules Config) for EPIC-BQM-017.
 
 ---
 
@@ -352,6 +352,94 @@
 **Impact if wrong**: AI-assisted configuration decisions cannot be explained during governance or compliance reviews.
 
 **Source**: `Documentation/ProjectSpecifications/architecture.md` — API security and audit requirements.
+
+---
+
+### A35 — Numerator Deduplication Uses Composite Key (ClientId + EngagementId)
+
+**Assumption**: Numerator deduplication in the processing pipeline uses a composite key of `ClientId + EngagementId` to detect duplicates. Records are only considered duplicates when **both** fields match. This is independent of the application's `AdoptionLevel` setting (which determines the matching key in Step 5 but not the deduplication key in Step 3). The PRD source notebooks (Maestro) explicitly deduplicate by "Client Id + Engagement Id combination."
+
+**Impact if wrong**: If single-key deduplication is retained, legitimate distinct records sharing one key component may be incorrectly collapsed (false positives), or true duplicates differing in one field may pass through (false negatives), inflating or deflating adoption metrics.
+
+**Source**: `Documentation/StakeholderDocuments/BUSINESS_RULES_AND_ETL_SUMMARY.md` — Maestro section: "Deduplicate by Client Id + Engagement Id combination"; `Documentation/StakeholderDocuments/notebooks/01_maestro_pcs.ipynb` — deduplication logic.
+
+---
+
+### A36 — Denominator Impact Preview Operates on Local Snapshot Only
+
+**Assumption**: The denominator rules impact preview feature operates exclusively against the local `app.vw_DenominatorLocal` (backed by `stage.DenominatorSnapshot`), not against the external Mercury server. Preview results reflect the freshness of the last successful `PL_DenomLoad_Weekly` run. The preview runs the full pipeline via Option D (see A39) but all data access remains local.
+
+**Impact if wrong**: If preview requires live Mercury access, it would be subject to the same connectivity constraints as the external server (A25) and could fail or timeout when the Mercury server is unreachable.
+
+**Source**: `Documentation/ProjectSpecifications/architecture.md` v1.5.0 — Section 4.8; A25; A39.
+
+---
+
+### A37 — Optimistic Concurrency for Rules Configuration (No Pessimistic Locks)
+
+**Assumption**: The rules configuration system uses **optimistic concurrency control** (version-check at save time) rather than pessimistic database-level locks. Advisory "soft locks" (edit sessions) are informational and never block other users from loading, editing, or saving. This is appropriate because: (a) the expected concurrent editor count is low (< 5 users at any time), (b) the edit window is short (minutes, not hours), and (c) conflicts are infrequent since different application owners typically edit different applications.
+
+**Impact if wrong**: If concurrent editor count is higher than expected or if conflicts become frequent, the system may need to escalate to pessimistic locking (exclusive edit mode) or real-time collaborative editing (CRDT/OT). The current design degrades gracefully — more conflicts simply mean more 409 responses and manual merges, but no data is ever lost.
+
+**Source**: `Documentation/Backlog/epics/epic-017-impact-preview-and-numerator-deduplication.md` v1.1.0 — Feature C; `Documentation/ProjectSpecifications/architecture.md` — Section 4.7 Concurrency Control.
+
+### A38 — Bearer Token via Authorization Header (No Auth Cookies Due to WAF)
+
+**Assumption**: All API authentication uses a **Bearer token** passed in the `Authorization` header. The token is stored in client `sessionStorage` (tab-scoped). Auth cookies (e.g., NextAuth/Auth.js JWTs) are **not** used for API authentication because corporate WAF (Web Application Firewall) appliances on Azure Front Door intercept, strip, or rewrite `Set-Cookie` headers — causing intermittent auth failures. Standard `Authorization: Bearer` headers pass through WAFs unmodified.
+
+**Impact if wrong**: If the WAF policy changes to allow large auth cookies, the system could revert to cookie-based auth. However, the sessionStorage approach also provides XSS exposure reduction (cleared on tab close) and tab isolation, so the current pattern is preferred regardless. If `sessionStorage` is unavailable (e.g., embedded iframes with storage partitioning), an alternative transport would be needed.
+
+**Source**: `src/frontend/lib/auth/session-token.ts`; `src/frontend/lib/auth/bearer-token.ts`; `Documentation/ProjectSpecifications/architecture.md` — Section 7.1.
+
+---
+
+### A39 — Impact Preview Runs Full Pipeline via Staged Rules (Option D)
+
+**Assumption**: The denominator rules impact preview feature runs the **full existing pipeline** (`usp_ExecutePipelineRun` → `usp_BuildFilteredDenominator` → `usp_ApplyNumeratorFilters` → `usp_CalculateMetrics`) with an optional `@previewSessionId` parameter that redirects rule source from `app.DenominatorFilterRules` to `stage.DenominatorFilterRulesPreview`. This is Option D from the evaluated alternatives (A–D). Preview results include complete adoption metrics (adoption %, revenue share %, matched count, denominator count, denominator revenue) and are guaranteed identical to production pipeline output because the same code path executes.
+
+**Impact if wrong**: If the pipeline cannot be parameterized (e.g., hard-coded references that can't accept a session branch), a dedicated preview SP (Option B) would be required — adding ~500 lines of duplicate T-SQL with permanent drift risk and violating the "no SP testing" constraint.
+
+**Source**: `specs/012-impact-preview-dedup-concurrency/preview-options-comparison.md` — Option D; `Documentation/ProjectSpecifications/architecture.md` — Section 4.8.
+
+---
+
+### A40 — SSE for Preview Result Delivery (No Polling, No SignalR)
+
+**Assumption**: Preview results are delivered to the client via **Server-Sent Events (SSE)** — the `POST /api/filters/denominator/:appId/preview` endpoint returns `Content-Type: text/event-stream` and streams status/completion events on a single held-open HTTP connection. No client-side polling hooks, no WebSocket/SignalR infrastructure. In local mode, the connection is held open during SP execution (3–8s). In ADF mode, the server polls `PipelineRuns` status internally and pushes events to the client.
+
+**Impact if wrong**: If corporate proxies or Azure Front Door buffer chunked/streaming responses despite `X-Accel-Buffering: no`, the system would need to fall back to SignalR (WebSocket) which requires an Azure SignalR Service resource and `@microsoft/signalr` package. This is the documented scale path for enterprise phase.
+
+**Source**: `specs/012-impact-preview-dedup-concurrency/preview-options-comparison.md` — SSE Deep Dive; `Documentation/ProjectSpecifications/architecture.md` — Section 4.8.5.
+
+---
+
+### A41 — ADF Direct Call for Preview Execution (No Background Worker for MVP)
+
+**Assumption**: Preview pipeline execution uses the existing `PipelineOrchestrationService` and `ADFPipelineClient` (ADF mode) or `ValidationPipelineDbRepository.executeLocalPipeline()` (local mode) — the same infrastructure already used for production pipeline triggers. No background worker (Azure Function + Queue) is deployed for MVP. The background worker is the documented scale path when ADF concurrency becomes a measured bottleneck (50+ concurrent previews).
+
+**Impact if wrong**: If ADF webhook cold start (2–5s) combined with pipeline execution (3–15s) causes unacceptable preview latency at scale, a background worker with queue backpressure would need to be introduced. The architecture is designed for this — `resolveExecutionMode()` already abstracts the executor, so adding a third mode (`"worker"`) requires no client-facing or API changes.
+
+**Source**: `specs/012-impact-preview-dedup-concurrency/preview-options-comparison.md` — Direct ADF Call vs. Background Worker; `Documentation/ProjectSpecifications/architecture.md` — Section 4.8.4.
+
+---
+
+### A42 — No Concurrency Guard for Preview Runs
+
+**Assumption**: Preview pipeline runs intentionally **bypass** the production concurrency guard (`409 CONFLICT` if a run is already in progress). Each preview is session-isolated via `SessionId` in `stage.DenominatorFilterRulesPreview` and tagged `TriggerSource = 'Preview'`. Multiple concurrent previews for the same application operate independently and do not affect dashboard metrics. The worst case (user fires 2–3 overlapping previews) results only in extra SP executions — acceptable at < 20 concurrent users.
+
+**Impact if wrong**: If previews consume significant database resources at scale (200+ concurrent previews against the same snapshot), a per-user throttle (e.g., max 1 active preview per user) may be needed. The `PipelineRuns` table already tracks preview runs by `ActorUserId`, enabling this guard if required.
+
+**Source**: `specs/012-impact-preview-dedup-concurrency/preview-options-comparison.md` — "Concurrency: No Guard for Preview"; `Documentation/ProjectSpecifications/architecture.md` — Section 4.8.6.
+
+---
+
+### A43 — Stale Run Recovery at 30-Minute Threshold
+
+**Assumption**: The production pipeline concurrency guard includes a **time-based staleness check**: if the latest in-progress run (`Queued` or `Processing`) is older than 30 minutes, it is auto-failed with `Status = 'Failed'` and `ErrorMessage = 'Auto-failed: exceeded 30min threshold'`, allowing the new run to proceed. This prevents permanent blocking from SP timeouts, ADF crashes, or network failures. Defense-in-depth: a SQL Agent job runs every 15 minutes to catch stuck runs even if the app process crashes.
+
+**Impact if wrong**: If legitimate pipeline runs take > 30 minutes (only possible at 500K+ rows with severe resource contention), the threshold would need to be increased. Current data: normal execution is 3–8s, worst case is 15–60s, ADF timeout is 10 minutes — so 30 minutes provides a 3× safety margin over the absolute worst case.
+
+**Source**: `specs/012-impact-preview-dedup-concurrency/preview-options-comparison.md` — Stale Run Recovery; `Documentation/ProjectSpecifications/architecture.md` — Section 4.8.6.
 
 ---
 

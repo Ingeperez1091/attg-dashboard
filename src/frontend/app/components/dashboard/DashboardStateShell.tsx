@@ -23,9 +23,10 @@ function secondaryMessage(state: DashboardStateIndicator | null): string | null 
   return null;
 }
 
-export function DashboardStateShell({ state, loading = false, children }: DashboardStateShellProps) {
+export function DashboardStateShell({ state, loading = false, children }: Readonly<DashboardStateShellProps>) {
   const tone = state?.state ?? "ready";
   const showBanner = loading || (state !== null && state.state !== "ready");
+  const subtitle = loading ? null : secondaryMessage(state);
 
   return (
     <section className="dashboard-state-shell" aria-live="polite">
@@ -37,7 +38,7 @@ export function DashboardStateShell({ state, loading = false, children }: Dashbo
           {loading ? (
             <span className="dashboard-state-shell__subtitle">Retrieving the latest scoped dashboard snapshot.</span>
           ) : (
-            secondaryMessage(state) ? <span className="dashboard-state-shell__subtitle">{secondaryMessage(state)}</span> : null
+            subtitle && <span className="dashboard-state-shell__subtitle">{subtitle}</span>
           )}
         </div>
       ) : null}

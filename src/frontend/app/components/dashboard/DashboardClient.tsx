@@ -8,6 +8,7 @@ import { DashboardFooterLegend } from "@/app/components/dashboard/DashboardFoote
 import { DashboardHero } from "@/app/components/dashboard/DashboardHero";
 import { DashboardKpiRow } from "@/app/components/dashboard/DashboardKpiRow";
 import { DashboardStateShell } from "@/app/components/dashboard/DashboardStateShell";
+import { authenticatedFetch } from "@/lib/api/authenticated-fetch";
 
 const ALL_FILTER = "All";
 
@@ -28,16 +29,10 @@ async function fetchDashboardUsage(subServiceLine?: string): Promise<DashboardUs
     url.searchParams.set("subServiceLine", subServiceLine);
   }
 
-  const response = await fetch(url.toString(), {
+  const response = await authenticatedFetch(url.toString(), {
     method: "GET",
     cache: "no-store"
   });
-
-  if (response.status === 401) {
-    const returnUrl = `${globalThis.location.pathname}${globalThis.location.search}`;
-    globalThis.location.href = `/login?returnUrl=${encodeURIComponent(returnUrl)}`;
-    throw new Error("UNAUTHORIZED");
-  }
 
   const body = await response.json();
 

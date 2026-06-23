@@ -37,9 +37,10 @@ describe("integration - numerator filter editor UI", () => {
             operator: "EQUALS",
             value: "sensitive"
           }
-        ]
-      })
-    }), { params: Promise.resolve({ appId }) });
+        ],
+          configVersion: 1
+        })
+      }), { params: Promise.resolve({ appId }) });
     const body = await response.json();
 
     expect(response.status).toBe(400);
@@ -57,9 +58,10 @@ describe("integration - numerator filter editor UI", () => {
             operator: "GREATER_OR_EQUAL",
             value: "20000"
           }
-        ]
-      })
-    }), { params: Promise.resolve({ appId }) });
+        ],
+          configVersion: 1
+        })
+      }), { params: Promise.resolve({ appId }) });
     const body = await response.json();
 
     expect(response.status).toBe(200);

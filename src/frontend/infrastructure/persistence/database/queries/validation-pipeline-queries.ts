@@ -195,10 +195,12 @@ export async function selectValidationResultsPage(
     client,
     `
       SELECT COUNT(1) AS TotalCount
-      FROM app.ValidationResults
-      WHERE ApplicationId = @applicationId
-        AND (@runId IS NULL OR PipelineRunId = @runId)
-        AND (@status IS NULL OR Status = @status);
+      FROM app.ValidationResults vr
+      INNER JOIN app.PipelineRuns pr ON pr.RunId = vr.PipelineRunId
+      WHERE vr.ApplicationId = @applicationId
+        AND (@runId IS NULL OR vr.PipelineRunId = @runId)
+        AND (@runId IS NOT NULL OR pr.TriggerSource <> 'Preview')
+        AND (@status IS NULL OR vr.Status = @status);
     `,
     {
       applicationId: query.applicationId,
@@ -211,22 +213,24 @@ export async function selectValidationResultsPage(
     client,
     `
       SELECT
-        ResultId,
-        PipelineRunId,
-        ApplicationId,
-        StageId,
-        RecordKey,
-        Status,
-        ErrorMessage,
-        CreatedBy,
-        UpdatedBy,
-        CreateDate,
-        UpdateDate
-      FROM app.ValidationResults
-      WHERE ApplicationId = @applicationId
-        AND (@runId IS NULL OR PipelineRunId = @runId)
-        AND (@status IS NULL OR Status = @status)
-      ORDER BY CreateDate DESC
+        vr.ResultId,
+        vr.PipelineRunId,
+        vr.ApplicationId,
+        vr.StageId,
+        vr.RecordKey,
+        vr.Status,
+        vr.ErrorMessage,
+        vr.CreatedBy,
+        vr.UpdatedBy,
+        vr.CreateDate,
+        vr.UpdateDate
+      FROM app.ValidationResults vr
+      INNER JOIN app.PipelineRuns pr ON pr.RunId = vr.PipelineRunId
+      WHERE vr.ApplicationId = @applicationId
+        AND (@runId IS NULL OR vr.PipelineRunId = @runId)
+        AND (@runId IS NOT NULL OR pr.TriggerSource <> 'Preview')
+        AND (@status IS NULL OR vr.Status = @status)
+      ORDER BY vr.CreateDate DESC
       OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
     `,
     {

@@ -35,7 +35,10 @@ export const filterRuleInputSchema = z.object({
 });
 
 export const updateNumeratorFiltersSchema = z.object({
-  rules: z.array(filterRuleInputSchema)
+  rules: z.array(filterRuleInputSchema),
+  configVersion: z.number().int().positive().optional(),
+  forceOverride: z.boolean().optional(),
+  overrideReason: z.string().min(1).max(500).optional(),
 });
 
 export const numeratorModelFieldSchema = z.object({

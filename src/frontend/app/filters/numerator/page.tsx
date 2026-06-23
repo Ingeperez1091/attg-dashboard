@@ -24,6 +24,7 @@ export default function NumeratorFiltersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [configVersion, setConfigVersion] = useState<number | null>(null);
   const [fieldsPanelOpen, setFieldsPanelOpen] = useState(false);
   const [users, setUsers] = useState<UserDirectoryEntry[]>([]);
 
@@ -90,9 +91,11 @@ export default function NumeratorFiltersPage() {
         if (rulesResponse.status === 404) {
           setRulesData({ rules: [], lastUpdatedAt: null, lastUpdatedBy: null });
           setDraftRules([]);
+          setConfigVersion(null);
         } else if (rulesResponse.ok) {
           const rulesBody = await rulesResponse.json();
           const loadedRules = rulesBody.rules ?? [];
+          setConfigVersion(rulesBody.configVersion ?? null);
           setRulesData({
             rules: loadedRules,
             lastUpdatedAt: rulesBody.lastUpdatedAt ?? null,
@@ -127,6 +130,7 @@ export default function NumeratorFiltersPage() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          configVersion,
           rules: rulesToSave.map((rule) => ({
             applicationModelFieldId: rule.applicationModelId,
             operator: rule.operator,
@@ -147,6 +151,7 @@ export default function NumeratorFiltersPage() {
       }
 
       const savedRules = body.rules ?? [];
+      setConfigVersion(body.configVersion ?? null);
       setRulesData({
         rules: savedRules,
         lastUpdatedAt: body.lastUpdatedAt ?? null,

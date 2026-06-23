@@ -12,7 +12,7 @@ function formatTimestamp(value: string | null): string {
   return new Date(value).toLocaleString();
 }
 
-export function DashboardHero({ latestRunId, refreshTimestamp, loading = false }: DashboardHeroProps) {
+export function DashboardHero({ latestRunId, refreshTimestamp, loading = false }: Readonly<DashboardHeroProps>) {
   return (
     <header className="dashboard-hero">
       <div className="dashboard-hero__aurora" aria-hidden="true" />

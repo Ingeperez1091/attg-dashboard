@@ -15,6 +15,10 @@
       },
       "actorUserId": {
         "type": "String"
+      },
+      "previewSessionId": {
+        "type": "String",
+        "defaultValue": ""
       }
     },
     "activities": [
@@ -38,6 +42,10 @@
             },
             "actorUserId": {
               "value": "@pipeline().parameters.actorUserId",
+              "type": "String"
+            },
+            "previewSessionId": {
+              "value": "@pipeline().parameters.previewSessionId",
               "type": "String"
             }
           }

@@ -33,6 +33,8 @@ export interface UpdateNumeratorFiltersInput {
   applicationId: string;
   actorUserId: string;
   rules: UpdateNumeratorFilterRuleInput[];
+  changeType?: string;
+  overrideReason?: string | null;
 }
 
 export interface NumeratorFilterRuleset {
