@@ -62,7 +62,9 @@ export class ValidationPipelineMemoryRepository implements IValidationPipelineRe
   }
 
   async listRunsByApplication(applicationId: string, limit: number): Promise<PipelineRun[]> {
-    return getStore().runs.filter((item) => item.applicationId === applicationId).slice(0, limit);
+    return getStore().runs
+      .filter((item) => item.applicationId === applicationId && item.triggerSource !== "Preview")
+      .slice(0, limit);
   }
 
   async updateRunStatus(input: UpdatePipelineRunStatusInput): Promise<PipelineRun | null> {
@@ -77,13 +79,13 @@ export class ValidationPipelineMemoryRepository implements IValidationPipelineRe
     run.updatedBy = input.actorUserId;
     run.updateDate = new Date().toISOString();
 
-    if (typeof input.errorMessage !== "undefined") {
+    if (input.errorMessage !== undefined) {
       run.errorMessage = input.errorMessage;
     }
-    if (typeof input.startTime !== "undefined") {
+    if (input.startTime !== undefined) {
       run.startTime = input.startTime;
     }
-    if (typeof input.endTime !== "undefined") {
+    if (input.endTime !== undefined) {
       run.endTime = input.endTime;
     }
 
@@ -144,12 +146,21 @@ export class ValidationPipelineMemoryRepository implements IValidationPipelineRe
   }
 
   async listValidationResults(query: ValidationResultsQuery): Promise<ValidationResultsPage> {
-    const filtered = getStore().validationResults.filter((row) => {
+    const store = getStore();
+    const previewRunIds = new Set(
+      store.runs
+        .filter((r) => r.triggerSource === "Preview")
+        .map((r) => r.runId)
+    );
+
+    const filtered = store.validationResults.filter((row) => {
       if (row.applicationId !== query.applicationId) {
         return false;
       }
 
-      if (query.runId && row.pipelineRunId !== query.runId) {
+      if (query.runId) {
+        if (row.pipelineRunId !== query.runId) return false;
+      } else if (previewRunIds.has(row.pipelineRunId)) {
         return false;
       }
 
@@ -221,7 +232,18 @@ export class ValidationPipelineMemoryRepository implements IValidationPipelineRe
     return this.updateRunStatus({ runId, actorUserId, status });
   }
 
-  async executeLocalPipeline(_input: CreatePipelineRunInput): Promise<void> {
-    return Promise.resolve();
+  async executeLocalPipeline(input: CreatePipelineRunInput): Promise<void> {
+    // Simulate SP execution completing the run. Uses await + setTimeout(0) to
+    // yield one event-loop tick before completing — this ensures fire-and-forget
+    // callers (void executeLocalPipeline) see "Queued" initially (like the real
+    // DB async path), while direct await callers (preview service) see Completed.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await this.updateRunStatus({
+      runId: input.runId,
+      actorUserId: input.actorUserId,
+      status: "Completed",
+      startTime: new Date().toISOString(),
+      endTime: new Date().toISOString()
+    });
   }
 }

@@ -1,10 +1,13 @@
 import { AppError } from "@/lib/api/error-handler";
 import { RepositoryBundle } from "@/core/domain/repositories/RepositoryBundle";
-import { RoleName } from "@/core/domain/entities/Role";
 import { SessionEntity as SessionUser } from "@/core/domain/entities/SessionEntity";
 import { assertCanonicalRole } from "@/lib/auth/authorization";
 import { logSsoIdentityBindSuccess } from "@/lib/api/audit-logger";
 import { isDevBypassEnabled } from "@/lib/auth/dev-bypass";
+import { resolveFromBearerToken } from "@/lib/auth/bearer-token";
+import { verifySessionIdCookieValue, SESSION_ID_COOKIE_NAME } from "@/lib/auth/session-cookie";
+import { appBootTrace } from "@/lib/runtime-trace";
+import { cookies as nextCookies } from "next/headers";
 
 function isSsoDebugEnabled(): boolean {
   return process.env.AUTH_DEBUG_SSO === "true";
@@ -33,19 +36,6 @@ function logSsoDebug(message: string, context?: Record<string, unknown>): void {
   }
 
   console.info(`[auth:sso] ${message}`);
-}
-
-function parseBearerUserId(authorizationHeader: string | null): string | null {
-  if (!authorizationHeader) {
-    return null;
-  }
-
-  const [scheme, value] = authorizationHeader.split(" ");
-  if (scheme?.toLowerCase() !== "bearer" || !value) {
-    return null;
-  }
-
-  return value.trim();
 }
 
 function parseCookieValue(cookieHeader: string | null, name: string): string | null {
@@ -77,20 +67,29 @@ function seededAdminSession(userId: string): SessionUser {
 }
 
 async function resolveFromRepositories(userId: string, repositories: RepositoryBundle): Promise<SessionUser | null> {
+  appBootTrace("session:resolveFromRepositories:start", { userId });
   const user = await repositories.users.findById(userId);
   if (!user) {
+    appBootTrace("session:resolveFromRepositories:no-user", { userId });
     return null;
   }
 
   const role = await repositories.roles.getRoleByUserId(userId);
-  const effectiveRole = (role ?? "viewer") as string;
+  const effectiveRole: string = role ?? "viewer";
   assertCanonicalRole(effectiveRole);
 
   const applications = await repositories.userApplications.listByUserId(userId);
 
+  appBootTrace("session:resolveFromRepositories:success", {
+    userId,
+    role: effectiveRole,
+    isActive: user.isActive,
+    applications: applications.length
+  });
+
   return {
     userId,
-    role: effectiveRole as RoleName,
+    role: effectiveRole,
     isActive: user.isActive,
     applications
   };
@@ -120,24 +119,29 @@ function extractSessionEmail(session: unknown): string | null {
 }
 
 async function resolveFromAuthSession(repositories: RepositoryBundle): Promise<SessionUser | null> {
+  appBootTrace("session:resolveFromAuthSession:start");
   let authSession: unknown;
   try {
     const authModule = await import("@/auth");
     authSession = await authModule.auth();
+    appBootTrace("session:resolveFromAuthSession:auth-loaded");
   } catch {
     logSsoDebug("Auth.js session import or resolution failed.");
+    appBootTrace("session:resolveFromAuthSession:auth-failed");
     return null;
   }
   const oid = extractSessionOid(authSession);
   const email = extractSessionEmail(authSession);
 
   if (oid) {
+    appBootTrace("session:resolveFromAuthSession:oid-found", { oid: mask(oid) });
     const byOid = await repositories.users.findByAzureAdObjectId(oid);
     if (byOid) {
       logSsoDebug("Resolved user by AzureADObjectId.", {
         userId: byOid.userId,
         oid: mask(oid)
       });
+      appBootTrace("session:resolveFromAuthSession:resolved-by-oid", { userId: byOid.userId });
       return resolveFromRepositories(byOid.userId, repositories);
     }
   } else {
@@ -148,9 +152,11 @@ async function resolveFromAuthSession(repositories: RepositoryBundle): Promise<S
     logSsoDebug("No email claim found in Auth.js session for identity fallback.", {
       oid: mask(oid)
     });
+    appBootTrace("session:resolveFromAuthSession:no-email", { oid: mask(oid) });
     return null;
   }
 
+  appBootTrace("session:resolveFromAuthSession:email-fallback", { email: mask(email), oid: mask(oid) });
   const users = await repositories.users.list(true);
   const byEmail = users.find((candidate) => candidate.email.toLowerCase() === email);
 
@@ -159,6 +165,7 @@ async function resolveFromAuthSession(repositories: RepositoryBundle): Promise<S
       email: mask(email),
       oid: mask(oid)
     });
+    appBootTrace("session:resolveFromAuthSession:no-local-user", { email: mask(email), oid: mask(oid) });
     return null;
   }
 
@@ -169,6 +176,7 @@ async function resolveFromAuthSession(repositories: RepositoryBundle): Promise<S
       existingOid: mask(byEmail.azureAdObjectId),
       incomingOid: mask(oid)
     });
+    appBootTrace("session:resolveFromAuthSession:oid-mismatch", { userId: byEmail.userId, email: mask(email) });
     return null;
   }
 
@@ -200,7 +208,37 @@ async function resolveFromAuthSession(repositories: RepositoryBundle): Promise<S
     email: mask(email),
     oid: mask(oid)
   });
+  appBootTrace("session:resolveFromAuthSession:resolved-by-email", { userId: byEmail.userId });
   return resolveFromRepositories(byEmail.userId, repositories);
+}
+
+async function resolveFromSessionIdCookie(request: Request, repositories: RepositoryBundle): Promise<SessionUser | null> {
+  const sidValue = parseCookieValue(request.headers.get("Cookie"), SESSION_ID_COOKIE_NAME);
+  if (!sidValue) {
+    return null;
+  }
+
+  const userId = verifySessionIdCookieValue(sidValue);
+  if (!userId) {
+    return null;
+  }
+
+  appBootTrace("session:resolveFromSessionIdCookie:verified", { userId: mask(userId) });
+  return resolveFromRepositories(userId, repositories);
+}
+
+async function resolveDevCookieUserId(request: Request): Promise<string | null> {
+  const fromHeader = parseCookieValue(request.headers.get("Cookie"), "dev_user_id");
+  if (fromHeader) {
+    return fromHeader;
+  }
+
+  try {
+    const cookieStore = await nextCookies();
+    return cookieStore.get("dev_user_id")?.value ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -211,7 +249,18 @@ export async function getOptionalSession(
   repositories?: RepositoryBundle
 ): Promise<SessionUser | null> {
   const devBypassEnabled = isDevBypassEnabled();
+  appBootTrace("session:getOptionalSession:start", { devBypassEnabled, hasRepositories: Boolean(repositories) });
 
+  // Priority 1: Bearer token from Authorization header (sessionStorage-based auth, WAF-safe)
+  if (repositories) {
+    const bearerSession = await resolveFromBearerToken(request, repositories);
+    if (bearerSession) {
+      appBootTrace("session:getOptionalSession:resolved-from-bearer");
+      return bearerSession;
+    }
+  }
+
+  // Priority 2: Auth.js cookie-based session (fallback, may be blocked by WAF)
   if (repositories) {
     const authSession = await resolveFromAuthSession(repositories);
     if (authSession) {
@@ -219,31 +268,42 @@ export async function getOptionalSession(
     }
   }
 
-  const bearerUserId = parseBearerUserId(request.headers.get("Authorization"));
-  const cookieUserId = !devBypassEnabled
-    ? null
-    : parseCookieValue(request.headers.get("Cookie"), "dev_user_id");
+  // Priority 3: Lightweight session ID cookie (attg_sid) set after token exchange.
+  // This small HMAC-signed cookie is sent on page requests and allows server
+  // components to identify the user without the large Auth.js JWT.
+  if (repositories) {
+    const sidSession = await resolveFromSessionIdCookie(request, repositories);
+    if (sidSession) {
+      return sidSession;
+    }
+  }
+
+  const cookieUserId = devBypassEnabled ? await resolveDevCookieUserId(request) : null;
   const envUserId = devBypassEnabled ? process.env.DEV_SESSION_USER_ID : undefined;
-  const userId = bearerUserId ?? cookieUserId ?? envUserId ?? null;
+  const userId = cookieUserId ?? envUserId ?? null;
 
   if (!userId) {
-    logSsoDebug("No fallback user identifier available (bearer/cookie/env).", {
+    logSsoDebug("No fallback user identifier available (cookie/env).", {
       devBypassEnabled
     });
+    appBootTrace("session:getOptionalSession:no-user-id");
     return null;
   }
 
-  if (devBypassEnabled && !bearerUserId && !cookieUserId && envUserId) {
+  if (devBypassEnabled && !cookieUserId && envUserId) {
     logSsoDebug("Resolved seeded dev bypass session from DEV_SESSION_USER_ID.", {
       userId: mask(envUserId)
     });
+    appBootTrace("session:getOptionalSession:dev-bypass", { userId: mask(envUserId) });
     return seededAdminSession(envUserId);
   }
 
   if (!repositories) {
+    appBootTrace("session:getOptionalSession:missing-repositories", { userId: mask(userId) });
     throw new AppError(500, "INTERNAL_ERROR", "Repository bundle is required for token-based session resolution.");
   }
 
+  appBootTrace("session:getOptionalSession:resolve-from-repositories", { userId: mask(userId) });
   return resolveFromRepositories(userId, repositories);
 }
 

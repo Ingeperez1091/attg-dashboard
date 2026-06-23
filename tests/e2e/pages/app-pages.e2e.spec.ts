@@ -20,7 +20,11 @@ test.describe("app pages e2e - route smoke coverage", () => {
 
   test("renders dashboard page", async ({ page }) => {
     await loginAsProvisionedDevAdmin(page);
-    await page.goto("/dashboard");
+
+    // Use client-side navigation via the nav bar link
+    const dashboardLink = page.getByRole("navigation").getByRole("link", { name: "Dashboard" });
+    await expect(dashboardLink).toBeVisible();
+    await dashboardLink.click();
 
     await expect(page.getByRole("heading", { name: /product adoption metrics summary/i })).toBeVisible();
     await expect(page.getByRole("tab", { name: "All" })).toBeVisible();

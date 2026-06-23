@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/numerator/route";
-import { getRuntimeRepositories, resetRuntimeRepositoriesForTests } from "@/infrastructure/persistence/runtime/repositories";
-import { resetNumeratorIngestionRepositoryForTests } from "@/infrastructure/persistence/runtime/repositories";
+import { getRuntimeRepositories, 
+  resetRuntimeRepositoriesForTests, 
+  resetNumeratorIngestionRepositoryForTests } from "@/infrastructure/persistence/runtime/repositories";
+
 
 describe("numerator ingestion contract - errors", () => {
   beforeEach(() => {
@@ -63,7 +65,7 @@ describe("numerator ingestion contract - errors", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${viewer.userId}`
+        Cookie: `dev_user_id=${viewer.userId}`
       },
       body: JSON.stringify({
         applicationId: "10000000-0000-0000-0000-000000000001",

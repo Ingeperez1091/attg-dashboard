@@ -26,7 +26,9 @@ describe("integration - non-filterable field rejection", () => {
       new Request(`http://localhost/api/filters/denominator/${appId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rules: [{ denominatorModelId, operator, value }] })
+        body: JSON.stringify({ rules: [{ denominatorModelId, operator, value }] ,
+        configVersion: 1
+      })
       }),
       { params: Promise.resolve({ appId }) }
     );
@@ -51,7 +53,8 @@ describe("integration - non-filterable field rejection", () => {
               operator: "EQUALS",
               value: "11300"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId }) }
@@ -71,7 +74,8 @@ describe("integration - non-filterable field rejection", () => {
               operator: "GREATER_THAN",
               value: "100"
             }
-          ]
+          ],
+          configVersion: 2
         })
       }),
       { params: Promise.resolve({ appId }) }
@@ -112,7 +116,8 @@ describe("integration - non-filterable field rejection", () => {
               operator: "GREATER_THAN",
               value: "5000"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId }) }

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { GET, PUT } from "@/app/api/filters/numerator/[appId]/route";
-import { resetRuntimeRepositoriesForTests } from "@/infrastructure/persistence/runtime/repositories";
-import { resetRuntimeNumeratorFilterRepositoryForTests } from "@/infrastructure/persistence/runtime/repositories";
+import { resetRuntimeRepositoriesForTests , resetRuntimeNumeratorFilterRepositoryForTests } from "@/infrastructure/persistence/runtime/repositories";
+
 
 describe("contract - GET /api/filters/numerator/:appId", () => {
   const appId = "10000000-0000-0000-0000-000000000005";
@@ -50,7 +50,8 @@ describe("contract - GET /api/filters/numerator/:appId", () => {
             operator: "GREATER_OR_EQUAL",
             value: "25000"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
     expect(putResponse.status).toBe(200);

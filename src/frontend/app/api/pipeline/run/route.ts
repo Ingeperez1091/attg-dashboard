@@ -1,19 +1,33 @@
 import { PipelineOrchestrationService } from "@/core/application/services/pipelineOrchestrationService";
-import { AppError } from "@/lib/api/error-handler";
-import { toPublicContractError, toStatusCode } from "@/lib/api/error-handler";
+import { AppError, toPublicContractError, toStatusCode } from "@/lib/api/error-handler";
 import { requireActive } from "@/lib/auth/guards";
 import { getRuntimeADFPipelineClient, getRuntimeRepositories, getRuntimeValidationPipelineRepository } from "@/infrastructure/persistence/runtime/repositories";
 import { triggerPipelineRequestSchema } from "@/infrastructure/validation/pipelineSchemas";
+import {
+  createOperationContext,
+  logOperationStart,
+  logOperationError,
+  logOperationValidationFailure
+} from "@/lib/api/operation-logger";
 
 export async function POST(request: Request): Promise<Response> {
   const repositories = getRuntimeRepositories();
+  const opCtx = createOperationContext(request);
+  logOperationStart(opCtx);
+  const start = Date.now();
 
   try {
     const session = await requireActive(request, repositories);
+    opCtx.callerUserId = session.userId;
     const body = await request.json().catch(() => null);
     const parsed = triggerPipelineRequestSchema.safeParse(body);
 
     if (!parsed.success) {
+      const failures = parsed.error.errors.map((e) => ({
+        field: e.path.join(".") || "request",
+        message: e.message
+      }));
+      logOperationValidationFailure(opCtx, failures);
       return Response.json({ error: "VALIDATION_ERROR", message: "Invalid request body." }, { status: 400 });
     }
 
@@ -26,7 +40,18 @@ export async function POST(request: Request): Promise<Response> {
     const repository = getRuntimeValidationPipelineRepository();
     const latestRun = (await repository.listRunsByApplication(parsed.data.applicationId, 1))[0] ?? null;
     if (latestRun && (latestRun.status === "Queued" || latestRun.status === "Processing")) {
-      throw new AppError(409, "CONFLICT", "A pipeline run is already in progress for this application.");
+      const ageMs = Date.now() - new Date(latestRun.createDate).getTime();
+      const STALE_THRESHOLD_MS = 30 * 60 * 1000;
+      if (ageMs > STALE_THRESHOLD_MS) {
+        await repository.updateRunStatus({
+          runId: latestRun.runId,
+          status: "Failed",
+          actorUserId: session.userId,
+          errorMessage: "Auto-failed: exceeded 30-minute threshold (FR-010a stale recovery)"
+        });
+      } else {
+        throw new AppError(409, "CONFLICT", "A pipeline run is already in progress for this application.");
+      }
     }
 
     const service = new PipelineOrchestrationService(repository, getRuntimeADFPipelineClient());
@@ -44,6 +69,8 @@ export async function POST(request: Request): Promise<Response> {
       { status: 201 }
     );
   } catch (error: unknown) {
-    return Response.json(toPublicContractError(error), { status: toStatusCode(error) });
+    const status = toStatusCode(error);
+    logOperationError(opCtx, error, status, Date.now() - start);
+    return Response.json(toPublicContractError(error), { status });
   }
 }

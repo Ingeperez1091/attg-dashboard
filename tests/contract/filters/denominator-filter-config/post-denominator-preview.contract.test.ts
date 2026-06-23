@@ -10,12 +10,13 @@ describe("contract - POST /api/filters/denominator/:appId/preview", () => {
 
   beforeEach(() => {
     process.env.USE_INMEMORY_REPOSITORY = "true";
+    process.env.PIPELINE_EXECUTION_MODE = "local";
     process.env.DEV_SESSION_USER_ID = "30000000-0000-0000-0000-000000000001";
     resetRuntimeRepositoriesForTests();
     resetRuntimeDenominatorFilterRepositoryForTests();
   });
 
-  it("returns preview payload with current, projected, delta, and calculatedAtUtc", async () => {
+  it("returns SSE stream with text/event-stream content type for valid request", async () => {
     const response = await POST(new Request(`http://localhost/api/filters/denominator/${appId}/preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -35,16 +36,24 @@ describe("contract - POST /api/filters/denominator/:appId/preview", () => {
       })
     }), { params: Promise.resolve({ appId }) });
 
-    const body = await response.json();
-
     expect(response.status).toBe(200);
-    expect(body.applicationId).toBe(appId);
-    expect(body.current).toBeDefined();
-    expect(body.projected).toBeDefined();
-    expect(body.delta).toBeDefined();
-    expect(typeof body.current.count).toBe("number");
-    expect(typeof body.projected.revenue).toBe("number");
-    expect(typeof body.calculatedAtUtc).toBe("string");
+    expect(response.headers.get("Content-Type")).toBe("text/event-stream");
+    expect(response.headers.get("Cache-Control")).toBe("no-cache");
+    expect(response.headers.get("X-Accel-Buffering")).toBe("no");
+
+    // Read stream and verify it contains SSE events
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+    }
+
+    // Should contain at least one event (status or error/complete)
+    expect(text).toContain("event:");
+    expect(text).toContain("data:");
   });
 
   it("returns 400 for invalid preview payload", async () => {

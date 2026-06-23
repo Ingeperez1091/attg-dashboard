@@ -9,7 +9,7 @@ export const FALLBACK_SUB_SERVICE_LINE = "Unassigned";
 
 export function toDashboardSubServiceLineLabel(value: string | null | undefined): string {
   const trimmed = value?.trim();
-  return trimmed ? trimmed : FALLBACK_SUB_SERVICE_LINE;
+  return trimmed || FALLBACK_SUB_SERVICE_LINE;
 }
 
 export function normalizeDashboardSubServiceLineKey(value: string | null | undefined): string {
@@ -89,8 +89,8 @@ export function aggregateDashboardGroups(rows: DashboardUsageSnapshotRow[]): Das
   const subServiceLineGroups: DashboardGroup[] = Array.from(bySubServiceLine.entries())
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([subServiceLine, subRows]) => {
-      const children: DashboardGroup[] = subRows
-        .sort((left, right) => left.applicationName.localeCompare(right.applicationName))
+      const sortedSubRows = [...subRows].sort((left, right) => left.applicationName.localeCompare(right.applicationName));
+      const children: DashboardGroup[] = sortedSubRows
         .map((row) => ({
           groupType: "application",
           groupKey: row.applicationId,

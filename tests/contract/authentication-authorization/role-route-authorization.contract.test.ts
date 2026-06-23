@@ -16,7 +16,7 @@ describe("contract - role and route authorization", () => {
     const response = await listAdminUsers(
       new Request("http://localhost/api/admin/users", {
         method: "GET",
-        headers: { Authorization: `Bearer ${viewerUserId}` }
+        headers: { Cookie: `dev_user_id=${viewerUserId}` }
       })
     );
 
@@ -38,7 +38,7 @@ describe("contract - role and route authorization", () => {
       new Request(`http://localhost/api/admin/users/${targetUser.userId}/role`, {
         method: "PUT",
         headers: {
-          Authorization: `Bearer ${ownerUserId}`,
+          Cookie: `dev_user_id=${ownerUserId}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({ roleId: "administrator" })
@@ -55,18 +55,24 @@ describe("contract - role and route authorization", () => {
     const viewerUserId = await createSessionUser({ role: "viewer", applicationIds: [appId] });
     const ownerUserId = await createSessionUser({ role: "application_owner", applicationIds: [appId] });
 
+    const validPreviewBody = {
+      rules: [
+        {
+          denominatorModelId: "50000000-0000-0000-0007-000000000000",
+          operator: "EQUALS",
+          value: "11420"
+        }
+      ]
+    };
+
     const viewerResponse = await updateDenominatorRulesPreview(
       new Request(`http://localhost/api/filters/denominator/${appId}/preview`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${viewerUserId}`,
+          Cookie: `dev_user_id=${viewerUserId}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          rules: [],
-          adoptionLevel: "engagement",
-          revenueBasis: "etd"
-        })
+        body: JSON.stringify(validPreviewBody)
       }),
       { params: Promise.resolve({ appId }) }
     );
@@ -77,18 +83,16 @@ describe("contract - role and route authorization", () => {
       new Request(`http://localhost/api/filters/denominator/${appId}/preview`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${ownerUserId}`,
+          Cookie: `dev_user_id=${ownerUserId}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          rules: [],
-          adoptionLevel: "engagement",
-          revenueBasis: "etd"
-        })
+        body: JSON.stringify(validPreviewBody)
       }),
       { params: Promise.resolve({ appId }) }
     );
 
+    // SSE stream returns 200 with text/event-stream for authorized users
     expect(ownerResponse.status).toBe(200);
+    expect(ownerResponse.headers.get("Content-Type")).toBe("text/event-stream");
   });
 });

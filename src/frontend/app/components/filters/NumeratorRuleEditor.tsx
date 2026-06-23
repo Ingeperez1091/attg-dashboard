@@ -9,14 +9,49 @@ import {
   NumeratorRuleExpressionDto
 } from "@/core/application/dto/numerator/NumeratorFilterDto";
 
-type NumeratorRuleEditorProps = {
+type NumeratorRuleEditorProps = Readonly<{
   rules: NumeratorRuleExpressionDto[];
   fields: NumeratorModelFieldDto[];
   saving?: boolean;
   onUpdateRules: (rules: NumeratorRuleExpressionDto[]) => void;
   onSave: (rules: NumeratorRuleExpressionDto[]) => void;
   onCancel: () => void;
+}>;
+
+type RuleValidationErrors = {
+  missingOperator: boolean;
+  missingValue: boolean;
+  invalidListFormat: boolean;
+  invalidBooleanValue: boolean;
+  invalidNumericValue: boolean;
+  invalidDateValue: boolean;
 };
+
+function getPlaceholder(field: NumeratorModelFieldDto | undefined, operator: string): string {
+  if (field?.fieldType === "boolean") return "true or false";
+  if (field?.fieldType === "numeric") return "e.g. 42 or 3.14";
+  if (field?.fieldType === "date") return "YYYY-MM-DD";
+  if (operator === "IN_LIST" || operator === "NOT_IN_LIST") return "Value1;Value2";
+  return "Value";
+}
+
+function getValidationMessage(errors: RuleValidationErrors): string {
+  if (errors.missingOperator) return "Select an operator.";
+  if (errors.missingValue) return "Enter a value.";
+  if (errors.invalidBooleanValue) return "Only 'true' or 'false' are allowed.";
+  if (errors.invalidNumericValue) return "Only numeric values (e.g. 42 or 3.14) are allowed.";
+  if (errors.invalidDateValue) return "Use SQL date format YYYY-MM-DD.";
+  return "Use semicolon-separated values (for example: Value1;Value2).";
+}
+
+function hasRuleError(errors: RuleValidationErrors): boolean {
+  return errors.missingOperator ||
+    errors.missingValue ||
+    errors.invalidListFormat ||
+    errors.invalidBooleanValue ||
+    errors.invalidNumericValue ||
+    errors.invalidDateValue;
+}
 
 export function NumeratorRuleEditor({
   rules,
@@ -71,15 +106,7 @@ export function NumeratorRuleEditor({
     [fields, rules]
   );
 
-  const hasValidationErrors = validationErrors.some(
-    (item) =>
-      item.missingOperator ||
-      item.missingValue ||
-      item.invalidListFormat ||
-      item.invalidBooleanValue ||
-        item.invalidNumericValue ||
-        item.invalidDateValue
-  );
+  const hasValidationErrors = validationErrors.some((e) => hasRuleError(e));
 
   function getFieldForRule(rule: NumeratorRuleExpressionDto): NumeratorModelFieldDto | undefined {
     return fields.find((f) => f.applicationModelFieldId === rule.applicationModelId);
@@ -131,9 +158,10 @@ export function NumeratorRuleEditor({
         {rules.map((rule, index) => {
           const field = getFieldForRule(rule);
           const operators = field?.fieldType ? NUMERATOR_OPERATORS_BY_TYPE[field.fieldType] : [];
+          const ruleErrors = validationErrors[index];
 
           return (
-            <div key={index} style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "8px" }}>
+            <div key={rule.applicationModelId} style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "8px" }}>
               <span>{index + 1}.</span>
 
               <select className="form-input"
@@ -141,7 +169,7 @@ export function NumeratorRuleEditor({
                 onChange={(e) => {
                   const nextModelId = e.target.value;
                   const nextField = fields.find((f) => f.applicationModelFieldId === nextModelId);
-                  const nextOperators = nextField?.fieldType ? NUMERATOR_OPERATORS_BY_TYPE[nextField.fieldType] : [];
+                  const nextOperators = (nextField?.fieldType ? NUMERATOR_OPERATORS_BY_TYPE[nextField.fieldType] : undefined) ?? [];
                   const nextOperator = nextOperators.includes(rule.operator) ? rule.operator : "";
 
                   updateRule(index, { applicationModelId: nextModelId, operator: nextOperator });
@@ -162,7 +190,7 @@ export function NumeratorRuleEditor({
                 <option value="">Select operator</option>
                 {operators.map((op) => (
                   <option key={op} value={op}>
-                    {NUMERATOR_OPERATOR_LABELS[op] || op}
+                    {NUMERATOR_OPERATOR_LABELS[op] ?? op}
                   </option>
                 ))}
               </select>
@@ -172,46 +200,20 @@ export function NumeratorRuleEditor({
                 type="text"
                 value={rule.value}
                 onChange={(e) => updateRule(index, { value: e.target.value })}
-                placeholder={
-                  field?.fieldType === "boolean"
-                    ? "true or false"
-                    : field?.fieldType === "numeric"
-                      ? "e.g. 42 or 3.14"
-                      : field?.fieldType === "date"
-                        ? "YYYY-MM-DD"
-                      : rule.operator === "IN_LIST" || rule.operator === "NOT_IN_LIST"
-                        ? "Value1;Value2"
-                        : "Value"
-                }
+                placeholder={getPlaceholder(field, rule.operator)}
                 aria-invalid={
                   showValidation &&
-                  (validationErrors[index].missingValue ||
-                    validationErrors[index].invalidListFormat ||
-                    validationErrors[index].invalidBooleanValue ||
-                    validationErrors[index].invalidNumericValue ||
-                    validationErrors[index].invalidDateValue)
+                  (ruleErrors.missingValue ||
+                    ruleErrors.invalidListFormat ||
+                    ruleErrors.invalidBooleanValue ||
+                    ruleErrors.invalidNumericValue ||
+                    ruleErrors.invalidDateValue)
                 }
               />
 
-              {showValidation &&
-                (validationErrors[index].missingOperator ||
-                  validationErrors[index].missingValue ||
-                  validationErrors[index].invalidListFormat ||
-                  validationErrors[index].invalidBooleanValue ||
-                  validationErrors[index].invalidNumericValue ||
-                  validationErrors[index].invalidDateValue) && (
+              {showValidation && hasRuleError(ruleErrors) && (
                 <span style={{ color: "#b42318", fontSize: "1rem" }}>
-                  {validationErrors[index].missingOperator
-                    ? "Select an operator."
-                    : validationErrors[index].missingValue
-                      ? "Enter a value."
-                      : validationErrors[index].invalidBooleanValue
-                        ? "Only 'true' or 'false' are allowed."
-                        : validationErrors[index].invalidNumericValue
-                          ? "Only numeric values (e.g. 42 or 3.14) are allowed."
-                            : validationErrors[index].invalidDateValue
-                              ? "Use SQL date format YYYY-MM-DD."
-                          : "Use semicolon-separated values (for example: Value1;Value2)."}
+                  {getValidationMessage(ruleErrors)}
                 </span>
               )}
 
@@ -227,7 +229,7 @@ export function NumeratorRuleEditor({
                 onClick={() => removeRule(index)}
                 aria-label={`Remove rule ${index + 1}`}
               >
-                <span aria-hidden="true">🗑</span>
+                <span aria-hidden="true">🗑</span>{" "}
                 Remove
               </button>
             </div>

@@ -1,0 +1,39 @@
+{
+  "name": "DS_ATTG_DenominatorSnapshot",
+  "properties": {
+    "description": "Sink dataset for the local stage.DenominatorSnapshot table in ATTG_Usage Azure SQL.",
+    "type": "AzureSqlTable",
+    "linkedServiceName": {
+      "referenceName": "LS_ATTG_Usage_AzureSQL",
+      "type": "LinkedServiceReference"
+    },
+    "typeProperties": {
+      "schema": "stage",
+      "table": "DenominatorSnapshot"
+    },
+    "schema": [
+      { "name": "EngagementID", "type": "nvarchar", "precision": 64 },
+      { "name": "Engagement", "type": "nvarchar", "precision": 512 },
+      { "name": "ClientID", "type": "nvarchar", "precision": 64 },
+      { "name": "Client", "type": "nvarchar", "precision": 512 },
+      { "name": "AccountChannel", "type": "nvarchar", "precision": 32 },
+      { "name": "EngagementSubServiceLine", "type": "nvarchar", "precision": 128 },
+      { "name": "EngagementServiceCode", "type": "nvarchar", "precision": 32 },
+      { "name": "EngagementService", "type": "nvarchar", "precision": 256 },
+      { "name": "EngagementStatus", "type": "nvarchar", "precision": 64 },
+      { "name": "CreationDate", "type": "datetime2" },
+      { "name": "ReleaseDate", "type": "datetime2" },
+      { "name": "ETD_ANSRAmt", "type": "decimal", "precision": 18, "scale": 2 },
+      { "name": "FYTD_ANSRAmt", "type": "decimal", "precision": 18, "scale": 2 },
+      { "name": "ETD_TERAmt", "type": "decimal", "precision": 18, "scale": 2 },
+      { "name": "FYTD_TERAmt", "type": "decimal", "precision": 18, "scale": 2 },
+      { "name": "ETD_ChargedHours", "type": "decimal", "precision": 18, "scale": 2 },
+      { "name": "FYTD_ChargedHours", "type": "decimal", "precision": 18, "scale": 2 }
+    ],
+    "annotations": [
+      "application-db",
+      "denominator-sink",
+      "staging"
+    ]
+  }
+}

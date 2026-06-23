@@ -1,16 +1,76 @@
 param(
     [string]$ServerInstance = ".\SQLEXPRESS",
     [string]$Database = "ATTG_Usage",
-    [int]$From = 14,
+    [string]$ConnectionString,
+    [string]$Username,
+    [string]$Password,
+    [int]$From = 29,
     [int]$To = 6,
     [switch]$UseTrustedConnection,
     [string]$SqlCmdPath = "C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\180\Tools\Binn\SQLCMD.EXE",
-    [switch]$TrustServerCertificate,
+    [switch]$TrustServerCertificate = $true,
     [bool]$QuotedIdentifierOn = $true
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+function Resolve-ConnectionSettings {
+    if (-not $ConnectionString) {
+        return
+    }
+
+    $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($ConnectionString)
+
+    if (-not $PSBoundParameters.ContainsKey("ServerInstance") -and -not [string]::IsNullOrWhiteSpace($builder.DataSource)) {
+        $script:ServerInstance = $builder.DataSource
+    }
+
+    if (-not $PSBoundParameters.ContainsKey("Database") -and -not [string]::IsNullOrWhiteSpace($builder.InitialCatalog)) {
+        $script:Database = $builder.InitialCatalog
+    }
+
+    if ($builder.IntegratedSecurity) {
+        $script:UseTrustedConnection = $true
+    } elseif (-not [string]::IsNullOrWhiteSpace($builder.UserID) -and -not [string]::IsNullOrWhiteSpace($builder.Password)) {
+        if (-not $PSBoundParameters.ContainsKey("Username")) {
+            $script:Username = $builder.UserID
+        }
+        if (-not $PSBoundParameters.ContainsKey("Password")) {
+            $script:Password = $builder.Password
+        }
+    }
+
+    if ($builder.ContainsKey("TrustServerCertificate") -and -not $PSBoundParameters.ContainsKey("TrustServerCertificate")) {
+        $script:TrustServerCertificate = [bool]$builder.TrustServerCertificate
+    }
+}
+
+function Validate-AuthenticationSettings {
+    if ($UseTrustedConnection -and ($PSBoundParameters.ContainsKey("Username") -or $PSBoundParameters.ContainsKey("Password"))) {
+        throw "Specify either trusted auth (-UseTrustedConnection) or SQL auth (-Username/-Password), not both."
+    }
+
+    if (($PSBoundParameters.ContainsKey("Username") -and -not $PSBoundParameters.ContainsKey("Password")) -or
+        ($PSBoundParameters.ContainsKey("Password") -and -not $PSBoundParameters.ContainsKey("Username"))) {
+        throw "Both -Username and -Password are required together for SQL authentication."
+    }
+
+    if (-not $UseTrustedConnection -and ($PSBoundParameters.ContainsKey("Username") -and $PSBoundParameters.ContainsKey("Password"))) {
+        return
+    }
+
+    if (-not $UseTrustedConnection -and $ConnectionString) {
+        $hasUser = -not [string]::IsNullOrWhiteSpace($Username)
+        $hasPass = -not [string]::IsNullOrWhiteSpace($Password)
+        if ($hasUser -and $hasPass) {
+            return
+        }
+    }
+}
+
+Resolve-ConnectionSettings
+Validate-AuthenticationSettings
 
 if ($SqlCmdPath -in @("True", "False")) {
     if (-not $PSBoundParameters.ContainsKey("TrustServerCertificate")) {
@@ -51,6 +111,8 @@ try {
         $sqlcmdParams = @("-b", "-S", $ServerInstance, "-d", $Database, "-i", $match.Name)
         if ($UseTrustedConnection) {
             $sqlcmdParams += "-E"
+        } elseif (-not [string]::IsNullOrWhiteSpace($Username) -and -not [string]::IsNullOrWhiteSpace($Password)) {
+            $sqlcmdParams += @("-U", $Username, "-P", $Password)
         }
         if ($TrustServerCertificate) {
             $sqlcmdParams += "-C"

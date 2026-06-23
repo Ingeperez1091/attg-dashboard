@@ -1,4 +1,5 @@
 import { ConnectionPool } from "mssql";
+import { appBootTrace } from "@/lib/runtime-trace";
 
 let poolPromise: Promise<ConnectionPool> | null = null;
 
@@ -8,12 +9,30 @@ type SqlAuthPoolConfig = {
   user: string;
   password: string;
   port?: number;
+  requestTimeout?: number;
   options?: {
     encrypt?: boolean;
     trustServerCertificate?: boolean;
     instanceName?: string;
   };
 };
+
+/**
+ * Resolves the SQL request timeout from environment or returns a safe default.
+ * The default mssql requestTimeout is 15000ms which is too short for stored
+ * procedures like usp_ExecutePipelineRun (can take 20-90s with large datasets).
+ */
+function resolveRequestTimeout(): number {
+  const envValue = getEnvValue("SQL_REQUEST_TIMEOUT_MS")?.trim();
+  if (envValue) {
+    const parsed = Number.parseInt(envValue, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  // Default: 180 seconds (sufficient for pipeline SP execution)
+  return 180_000;
+}
 
 function getEnvValue(key: string): string | undefined {
   const direct = process.env[key];
@@ -52,6 +71,45 @@ function parseSqlPortFromEnv(): number | undefined {
   return parsed;
 }
 
+function parseConnectionStringValue(connectionString: string, keys: string[]): string | undefined {
+  const segments = connectionString.split(";");
+
+  for (const segment of segments) {
+    const separatorIndex = segment.indexOf("=");
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const rawKey = segment.slice(0, separatorIndex).trim().toLowerCase();
+    if (!keys.includes(rawKey)) {
+      continue;
+    }
+
+    const value = segment.slice(separatorIndex + 1).trim();
+    if (value.length > 0) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function resolveSafeSqlTargetFromConnectionString(connectionString: string): string | undefined {
+  const serverValue = parseConnectionStringValue(connectionString, [
+    "server",
+    "data source",
+    "address",
+    "addr",
+    "network address"
+  ]);
+
+  if (!serverValue) {
+    return undefined;
+  }
+
+  return serverValue.startsWith("tcp:") ? serverValue.slice(4) : serverValue;
+}
+
 function buildTrustedConnectionStringFromSqlEnv(): string | null {
   const server = getEnvValue("SQL_SERVER")?.trim();
   const instance = getEnvValue("SQL_INSTANCE")?.trim();
@@ -64,11 +122,14 @@ function buildTrustedConnectionStringFromSqlEnv(): string | null {
     return null;
   }
 
-  const serverTarget = port !== undefined
-    ? `${server},${port}`
-    : instance
-      ? `${server}\\${instance}`
-      : server;
+  let serverTarget: string;
+  if (port !== undefined) {
+    serverTarget = `${server},${port}`;
+  } else if (instance) {
+    serverTarget = `${server}\\${instance}`;
+  } else {
+    serverTarget = server;
+  }
 
   const parts: string[] = [
     `Server=${serverTarget}`,
@@ -130,7 +191,8 @@ function buildSqlAuthPoolConfigFromSqlEnv(): SqlAuthPoolConfig | null {
     database,
     user,
     password,
-    ...(port !== undefined ? { port } : {}),
+    requestTimeout: resolveRequestTimeout(),
+    ...(port === undefined ? {} : { port }),
     ...(Object.keys(options).length > 0 ? { options } : {})
   };
 }
@@ -164,8 +226,11 @@ function resolveConnectionString(): string {
 }
 
 async function connectWithResolvedDriver(connectionString: string, trustedConnection: boolean): Promise<ConnectionPool> {
+  const timeout = resolveRequestTimeout();
   if (!trustedConnection) {
-    const pool = new ConnectionPool(connectionString);
+    const parsedConfig = ConnectionPool.parseConnectionString(connectionString);
+    parsedConfig.requestTimeout = timeout;
+    const pool = new ConnectionPool(parsedConfig);
     return pool.connect();
   }
 
@@ -175,7 +240,9 @@ async function connectWithResolvedDriver(connectionString: string, trustedConnec
     const importDynamic = new Function("m", "return import(m)") as (m: string) => Promise<unknown>;
     const sql = await importDynamic(moduleName);
     const MsNodePool = (sql as { ConnectionPool: typeof ConnectionPool }).ConnectionPool;
-    const pool = new MsNodePool(connectionString);
+    const parsedConfig = MsNodePool.parseConnectionString(connectionString);
+    parsedConfig.requestTimeout = timeout;
+    const pool = new MsNodePool(parsedConfig);
     return pool.connect();
   } catch {
     throw new Error(
@@ -185,21 +252,53 @@ async function connectWithResolvedDriver(connectionString: string, trustedConnec
 }
 
 /**
+ * Validates that SQL encryption is enabled in production environments.
+ * Prevents accidental deployment with unencrypted database connections.
+ */
+function assertProductionEncryption(): void {
+  if (process.env.NODE_ENV !== "production") return;
+
+  const encrypt = getEnvValue("SQL_ENCRYPT")?.trim().toLowerCase();
+  // If encrypt is explicitly "false", refuse to start in production.
+  if (encrypt === "false") {
+    throw new Error(
+      "Security: SQL_ENCRYPT=false is not permitted in production. " +
+      "Set SQL_ENCRYPT=true to enforce TLS encryption for database connections."
+    );
+  }
+}
+
+/**
  * Returns a singleton SQL connection pool for the application process.
  */
 export function getSqlConnectionPool(): Promise<ConnectionPool> {
   if (!poolPromise) {
+    assertProductionEncryption();
     const trustedConnection = parseBooleanEnv(getEnvValue("TRUSTED_CONNECTION")) === true;
     poolPromise = (async () => {
       if (!trustedConnection) {
         const sqlAuthConfig = buildSqlAuthPoolConfigFromSqlEnv();
         if (sqlAuthConfig) {
+          appBootTrace("sql:pool:init", {
+            mode: "sql-auth-config",
+            trustedConnection,
+            targetServer: sqlAuthConfig.server,
+            hasPort: typeof sqlAuthConfig.port === "number",
+            hasInstanceName: Boolean(sqlAuthConfig.options?.instanceName)
+          });
           const pool = new ConnectionPool(sqlAuthConfig);
           return pool.connect();
         }
       }
 
-      return connectWithResolvedDriver(resolveConnectionString(), trustedConnection);
+      const connectionString = resolveConnectionString();
+      appBootTrace("sql:pool:init", {
+        mode: trustedConnection ? "trusted-connection-string" : "connection-string",
+        trustedConnection,
+        targetServer: resolveSafeSqlTargetFromConnectionString(connectionString) ?? "unresolved"
+      });
+
+      return connectWithResolvedDriver(connectionString, trustedConnection);
     })().catch((error: unknown) => {
       const e = error as { code?: string; originalError?: { message?: string } };
       const originalMessage = e.originalError?.message ?? "";
@@ -214,12 +313,5 @@ export function getSqlConnectionPool(): Promise<ConnectionPool> {
     });
   }
 
-  return poolPromise as Promise<ConnectionPool>;
-}
-
-/**
- * Test utility to clear pool singleton between suites.
- */
-export function resetSqlConnectionPoolForTests(): void {
-  poolPromise = null;
+  return poolPromise;
 }

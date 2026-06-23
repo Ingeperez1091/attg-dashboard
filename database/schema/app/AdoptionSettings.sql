@@ -14,6 +14,11 @@ BEGIN
         CONSTRAINT FK_AdoptionSettings_Applications FOREIGN KEY (ApplicationId) REFERENCES app.Applications(ApplicationId),
         CONSTRAINT UQ_AdoptionSettings_ApplicationId UNIQUE (ApplicationId),
         CONSTRAINT CK_AdoptionSettings_AdoptionLevel CHECK (AdoptionLevel IN ('engagement', 'client')),
-        CONSTRAINT CK_AdoptionSettings_NumeratorSource CHECK (NumeratorSource IN ('API', 'Manual'))
+        CONSTRAINT CK_AdoptionSettings_NumeratorSource CHECK (NumeratorSource IN ('API', 'Manual')),
+        CONSTRAINT CK_AdoptionSettings_RevenueMetric_SafeIdentifier CHECK (
+            LEN(RevenueMetric) >= 1
+            AND RevenueMetric LIKE '[A-Za-z_]%'
+            AND RevenueMetric NOT LIKE '%[^A-Za-z0-9_]%'
+        )
     );
 END;

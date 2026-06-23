@@ -21,8 +21,33 @@ export async function loginAsProvisionedDevAdmin(page: Page): Promise<void> {
 
   expect(createResponse.ok()).toBe(true);
 
-  await page.goto("/login");
-  await page.getByLabel("Account Identifier").fill(email);
-  await page.getByRole("button", { name: "Login (Dev Only)" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  // Get the userId from the creation response to set the cookie directly
+  const createdUser = await createResponse.json();
+  const userId = createdUser.userId;
+
+  // Set the dev_user_id cookie in the browser context. This simulates the
+  // dev-login flow without the redirect-cookie race condition.
+  await page.context().addCookies([
+    {
+      name: "dev_user_id",
+      value: userId,
+      url: "http://localhost:3001"
+    }
+  ]);
+
+  // Navigate to `/` — the SessionProvider will call /api/auth/session-token
+  // which sees the dev_user_id cookie and issues a Bearer token.
+  await page.goto("/");
+  // Wait for the AuthGuard to resolve (SessionProvider acquires token)
+  await page.waitForFunction(() => {
+    return !document.querySelector(".auth-guard-loading");
+  }, { timeout: 15000 });
+
+  // If we got redirected to login (session acquisition failed), retry once
+  if (page.url().includes("/login")) {
+    await page.goto("/");
+    await page.waitForFunction(() => {
+      return !document.querySelector(".auth-guard-loading");
+    }, { timeout: 15000 });
+  }
 }

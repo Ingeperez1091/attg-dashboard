@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getRuntimeRepositories } from "@/infrastructure/persistence/runtime/repositories";
 
 function sanitizeReturnUrl(rawValue: string | null): string {
-  if (!rawValue || !rawValue.startsWith("/")) {
+  if (!rawValue?.startsWith("/")) {
     return "/";
   }
 
@@ -46,7 +46,7 @@ export async function POST(request: Request): Promise<Response> {
     return buildLoginRedirect(request, returnUrl, "DEV_USER_INACTIVE");
   }
 
-  const response = NextResponse.redirect(new URL(returnUrl, request.url));
+  const response = NextResponse.redirect(new URL(returnUrl, request.url), 303);
   response.cookies.set("dev_user_id", matched.userId, {
     httpOnly: true,
     secure: false,

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { GET, PUT } from "@/app/api/filters/numerator/[appId]/route";
-import { getRuntimeRepositories, resetRuntimeRepositoriesForTests } from "@/infrastructure/persistence/runtime/repositories";
-import { resetRuntimeNumeratorFilterRepositoryForTests } from "@/infrastructure/persistence/runtime/repositories";
+import { getRuntimeRepositories, 
+  resetRuntimeRepositoriesForTests , 
+  resetRuntimeNumeratorFilterRepositoryForTests } from "@/infrastructure/persistence/runtime/repositories";
+
 
 async function createSessionUser(
   role: "administrator" | "application_owner" | "viewer",
@@ -37,7 +39,7 @@ describe("contract - filter authorization", () => {
 
     const response = await GET(new Request(`http://localhost/api/filters/numerator/${appId}`, {
       method: "GET",
-      headers: { Authorization: `Bearer ${ownerUserId}` }
+      headers: { Cookie: `dev_user_id=${ownerUserId}` }
     }), { params: Promise.resolve({ appId }) });
     const body = await response.json();
 
@@ -51,7 +53,7 @@ describe("contract - filter authorization", () => {
     const response = await PUT(new Request(`http://localhost/api/filters/numerator/${appId}`, {
       method: "PUT",
       headers: {
-        Authorization: `Bearer ${viewerUserId}`,
+        Cookie: `dev_user_id=${viewerUserId}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -61,7 +63,8 @@ describe("contract - filter authorization", () => {
             operator: "GREATER_OR_EQUAL",
             value: "1000"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
     const body = await response.json();
@@ -76,7 +79,7 @@ describe("contract - filter authorization", () => {
     const response = await PUT(new Request(`http://localhost/api/filters/numerator/${appId}`, {
       method: "PUT",
       headers: {
-        Authorization: `Bearer ${ownerUserId}`,
+        Cookie: `dev_user_id=${ownerUserId}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -86,7 +89,8 @@ describe("contract - filter authorization", () => {
             operator: "LESS_OR_EQUAL",
             value: "90000"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
     const body = await response.json();

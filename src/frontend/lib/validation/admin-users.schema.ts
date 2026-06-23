@@ -3,12 +3,19 @@ import { z } from "zod";
 export const roleSchema = z.enum(["administrator", "application_owner", "viewer"]);
 
 export const createUserSchema = z.object({
-  username: z.string().min(1).max(255).regex(/^[a-zA-Z0-9_-]+$/),
-  email: z.string().email().max(320),
-  displayName: z.string().max(255).optional(),
-  isActive: z.boolean().default(true),
+  username: z
+    .string({ required_error: "Username is required." })
+    .min(1, "Username must not be empty.")
+    .max(255, "Username must be 255 characters or fewer.")
+    .regex(/^[a-zA-Z0-9._-]+$/, "Username may only contain letters, numbers, periods, underscores, or hyphens."),
+  email: z
+    .string({ required_error: "Email is required." })
+    .email("Email must be a valid email address.")
+    .max(320, "Email must be 320 characters or fewer."),
+  displayName: z.string().max(255, "Display name must be 255 characters or fewer.").optional(),
+  isActive: z.boolean({ invalid_type_error: "isActive must be a boolean." }).default(true),
   roleId: roleSchema.optional(),
-  applicationIds: z.array(z.string().uuid()).optional()
+  applicationIds: z.array(z.string().uuid("Each application ID must be a valid UUID.")).optional()
 });
 
 export const assignRoleSchema = z.object({

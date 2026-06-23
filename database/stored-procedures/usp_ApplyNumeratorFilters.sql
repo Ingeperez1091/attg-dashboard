@@ -1,5 +1,3 @@
-SET NOCOUNT ON;
-
 IF OBJECT_ID('app.usp_ApplyNumeratorFilters', 'P') IS NOT NULL
 BEGIN
     DROP PROCEDURE app.usp_ApplyNumeratorFilters;

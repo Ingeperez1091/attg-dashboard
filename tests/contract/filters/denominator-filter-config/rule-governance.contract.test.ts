@@ -28,7 +28,8 @@ describe("contract - PUT /api/filters/denominator/:appId field/operator governan
               operator: "GREATER_THAN",
               value: "11300"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId }) }
@@ -53,7 +54,8 @@ describe("contract - PUT /api/filters/denominator/:appId field/operator governan
               operator: "CONTAINS",
               value: "5000"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId }) }
@@ -78,7 +80,8 @@ describe("contract - PUT /api/filters/denominator/:appId field/operator governan
               operator: "IN_LIST",
               value: "2025-01-01;2025-12-31"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId }) }
@@ -102,7 +105,8 @@ describe("contract - PUT /api/filters/denominator/:appId field/operator governan
               operator: "EQUALS",
               value: "11300"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId }) }
@@ -123,7 +127,8 @@ describe("contract - PUT /api/filters/denominator/:appId field/operator governan
               operator: "GREATER_THAN",
               value: "5000"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId }) }
@@ -145,7 +150,8 @@ describe("contract - PUT /api/filters/denominator/:appId field/operator governan
               operator: "GREATER_THAN",
               value: "notanumber"
             }
-          ]
+          ],
+          configVersion: 1
         })
       }),
       { params: Promise.resolve({ appId }) }

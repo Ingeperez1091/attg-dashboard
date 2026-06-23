@@ -1,9 +1,8 @@
-import { signIn } from "@/auth";
 import { isDevBypassEnabled } from "@/lib/auth/dev-bypass";
 import { cookies } from "next/headers";
 
 interface LoginPageProps {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  readonly searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 function getReturnUrl(rawValue: string | string[] | undefined): string {
@@ -26,11 +25,6 @@ export default async function LoginPage({ searchParams }: LoginPageProps): Promi
   const cookieStore = await cookies();
   const devBypassUserId = isLocalDev ? cookieStore.get("dev_user_id")?.value : undefined;
 
-  async function signInWithMicrosoft(): Promise<void> {
-    "use server";
-    await signIn("microsoft-entra-id", { redirectTo: returnUrl });
-  }
-
   return (
     <main style={{ maxWidth: "480px", margin: "64px auto", padding: "0 16px" }}>
       <h1>Sign in</h1>
@@ -48,7 +42,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps): Promi
         </p>
       ) : null}
 
-      <form action={signInWithMicrosoft}>
+      <form action="/api/auth/signin-entra" method="post">
+        <input type="hidden" name="returnUrl" value={returnUrl} />
         <button type="submit" className="btn btn--primary" aria-live="polite">
           Sign in with Microsoft Entra ID
         </button>

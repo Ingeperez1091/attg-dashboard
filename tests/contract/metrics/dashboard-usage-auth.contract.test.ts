@@ -79,7 +79,7 @@ describe("dashboard usage contract - auth failures", () => {
       new Request("http://localhost/api/dashboard/usage?runId=70000000-0000-0000-0000-000000000010", {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${user.userId}`
+          Cookie: `dev_user_id=${user.userId}`
         }
       })
     );

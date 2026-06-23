@@ -22,7 +22,7 @@ export function UsersPageClient({
   availableApplications,
   availableRoles,
   currentUserRole,
-}: UsersPageClientProps): ReactElement {
+}: Readonly<UsersPageClientProps>): ReactElement {
   const [users, setUsers] = useState<AdminUserDto[]>(initialUsers);
   const [searchTerm, setSearchTerm] = useState("");
   const [includeInactive, setIncludeInactive] = useState(false);
@@ -76,9 +76,20 @@ export function UsersPageClient({
     setFormOpen(false);
   }
 
+  async function refreshUsers(): Promise<void> {
+    try {
+      const res = await fetch("/api/admin/users?includeInactive=true");
+      if (!res.ok) return;
+      const body = (await res.json()) as { users: AdminUserDto[] };
+      setUsers(body.users);
+    } catch {
+      // Fallback to full page reload if API call fails
+      globalThis.location.reload();
+    }
+  }
+
   function handleSaved(_userId: string): void {
-    // Refresh to pick up canonical state after create/edit API calls.
-    window.location.reload();
+    refreshUsers();
   }
 
   async function handleToggleActive(userId: string, newIsActive: boolean): Promise<void> {
@@ -146,14 +157,13 @@ export function UsersPageClient({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
-          <div
-            role="group"
+          <fieldset
             aria-label="User status filter"
             className="app-segmented"
           >
             <button
               type="button"
-              className={`btn btn--sm app-segmented__button${!includeInactive ? " is-active" : ""}`}
+              className={`btn btn--sm app-segmented__button${includeInactive ? "" : " is-active"}`}
               onClick={() => setIncludeInactive(false)}
               aria-pressed={!includeInactive}
             >
@@ -167,7 +177,7 @@ export function UsersPageClient({
             >
               All
             </button>
-          </div>
+          </fieldset>
         </div>
 
         <UserListTable

@@ -1,8 +1,8 @@
 "use client";
 
 import { ReactElement, useMemo } from "react";
-import { Role } from "@/core/domain/entities/Role";
-import { RoleName } from "@/core/domain/entities/Role";
+import { Role , RoleName } from "@/core/domain/entities/Role";
+
 
 interface RolePickerProps {
   id?: string;
@@ -30,7 +30,7 @@ export function RolePicker({
   required,
   roles,
   tileMode,
-}: RolePickerProps): ReactElement {
+}: Readonly<RolePickerProps>): ReactElement {
   const uniqueRoles = useMemo(() => {
     const seen = new Set<RoleName>();
     return roles.filter((role) => {

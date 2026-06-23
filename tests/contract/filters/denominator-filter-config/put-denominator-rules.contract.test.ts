@@ -31,7 +31,8 @@ describe("contract - PUT /api/filters/denominator/:appId", () => {
             operator: "GREATER_THAN",
             value: "5000"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
 

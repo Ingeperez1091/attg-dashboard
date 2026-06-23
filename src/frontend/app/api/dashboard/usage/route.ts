@@ -7,6 +7,12 @@ import {
   getRuntimeValidationPipelineRepository
 } from "@/infrastructure/persistence/runtime/repositories";
 import { AppError, toStatusCode } from "@/lib/api/error-handler";
+import {
+  createOperationContext,
+  logOperationStart,
+  logOperationError,
+  logOperationValidationFailure
+} from "@/lib/api/operation-logger";
 import { requireActive } from "@/lib/auth/guards";
 import { dashboardUsageQuerySchema } from "@/lib/validation/dashboardUsageSchema";
 
@@ -21,11 +27,15 @@ function toContractError(error: unknown): { error: string; message: string } {
 export async function GET(request: Request): Promise<Response> {
   const repositories = getRuntimeRepositories();
   const service = new DashboardUsageService(getRuntimeDashboardUsageRepository(), repositories.applications);
+  const opCtx = createOperationContext(request);
+  logOperationStart(opCtx);
+  const start = Date.now();
   let session: SessionEntity | null = null;
   let parsedQuery: { subServiceLine?: string; runId?: string } | null = null;
 
   try {
     session = await requireActive(request, repositories);
+    opCtx.callerUserId = session.userId;
     const { searchParams } = new URL(request.url);
     const queryResult = dashboardUsageQuerySchema.safeParse({
       subServiceLine: searchParams.get("subServiceLine") ?? undefined,
@@ -33,6 +43,7 @@ export async function GET(request: Request): Promise<Response> {
     });
 
     if (!queryResult.success) {
+      logOperationValidationFailure(opCtx, [{ field: "query", message: "Invalid query parameters." }]);
       return Response.json({ error: "VALIDATION_ERROR", message: "Invalid query parameters." }, { status: 400 });
     }
 
@@ -59,6 +70,8 @@ export async function GET(request: Request): Promise<Response> {
       }
     }
 
-    return Response.json(toContractError(error), { status: toStatusCode(error) });
+    const status = toStatusCode(error);
+    logOperationError(opCtx, error, status, Date.now() - start);
+    return Response.json(toContractError(error), { status });
   }
 }

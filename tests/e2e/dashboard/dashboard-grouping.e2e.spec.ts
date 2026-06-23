@@ -3,7 +3,7 @@ import path from "node:path";
 import { test, expect } from "@playwright/test";
 import { loginAsProvisionedDevAdmin } from "../helpers/auth";
 
-const dashboardStoreFile = path.resolve(process.cwd(), "tests/e2e/dashboard/.tmp/dashboard-usage-store.json");
+    const dashboardStoreFile = path.resolve(process.cwd(), "tests/e2e/.tmp/dashboard-usage-store.json");
 
 function seedDashboardStore(): void {
   mkdirSync(path.dirname(dashboardStoreFile), { recursive: true });

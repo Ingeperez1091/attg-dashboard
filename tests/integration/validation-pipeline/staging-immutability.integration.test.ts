@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 function assertNoStageMutation(sql: string): void {
@@ -11,12 +11,18 @@ function assertNoStageMutation(sql: string): void {
 
 describe("validation pipeline integration - staging immutability", () => {
   it("does not mutate stage.EngagementUsageRaw in orchestration and filter procedures", () => {
+    const migrationsDir = resolve(process.cwd(), "database/migrations");
+    const executeMigration = readdirSync(migrationsDir)
+      .find((file) => file.endsWith("_create_usp_execute_pipeline_run.sql"));
+
+    expect(executeMigration).toBeDefined();
+
     const executeSql = readFileSync(
-      resolve(process.cwd(), "database/migrations/024_create_usp_execute_pipeline_run.sql"),
+      resolve(migrationsDir, executeMigration!),
       "utf8"
     );
     const filterSql = readFileSync(
-      resolve(process.cwd(), "database/migrations/023_create_usp_apply_numerator_filters.sql"),
+      resolve(migrationsDir, "023_create_usp_apply_numerator_filters.sql"),
       "utf8"
     );
 

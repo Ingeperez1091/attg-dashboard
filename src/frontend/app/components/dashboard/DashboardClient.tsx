@@ -8,6 +8,7 @@ import { DashboardFooterLegend } from "@/app/components/dashboard/DashboardFoote
 import { DashboardHero } from "@/app/components/dashboard/DashboardHero";
 import { DashboardKpiRow } from "@/app/components/dashboard/DashboardKpiRow";
 import { DashboardStateShell } from "@/app/components/dashboard/DashboardStateShell";
+import { authenticatedFetch } from "@/lib/api/authenticated-fetch";
 
 const ALL_FILTER = "All";
 
@@ -23,21 +24,15 @@ function toFilterOptions(response: DashboardUsageResponseDto | null): string[] {
 }
 
 async function fetchDashboardUsage(subServiceLine?: string): Promise<DashboardUsageResponseDto> {
-  const url = new URL("/api/dashboard/usage", window.location.origin);
+  const url = new URL("/api/dashboard/usage", globalThis.location.origin);
   if (subServiceLine && subServiceLine !== ALL_FILTER) {
     url.searchParams.set("subServiceLine", subServiceLine);
   }
 
-  const response = await fetch(url.toString(), {
+  const response = await authenticatedFetch(url.toString(), {
     method: "GET",
     cache: "no-store"
   });
-
-  if (response.status === 401) {
-    const returnUrl = `${window.location.pathname}${window.location.search}`;
-    window.location.href = `/login?returnUrl=${encodeURIComponent(returnUrl)}`;
-    throw new Error("UNAUTHORIZED");
-  }
 
   const body = await response.json();
 

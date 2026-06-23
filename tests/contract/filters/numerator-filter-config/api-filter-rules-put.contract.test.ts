@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { GET, PUT } from "@/app/api/filters/numerator/[appId]/route";
-import { resetRuntimeRepositoriesForTests } from "@/infrastructure/persistence/runtime/repositories";
-import { resetRuntimeNumeratorFilterRepositoryForTests } from "@/infrastructure/persistence/runtime/repositories";
+import { resetRuntimeRepositoriesForTests , resetRuntimeNumeratorFilterRepositoryForTests } from "@/infrastructure/persistence/runtime/repositories";
+
 
 describe("contract - PUT /api/filters/numerator/:appId", () => {
   const appId = "10000000-0000-0000-0000-000000000005";
@@ -37,7 +37,8 @@ describe("contract - PUT /api/filters/numerator/:appId", () => {
             operator: "GREATER_THAN",
             value: "50000"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
     expect(seedResponse.status).toBe(200);
@@ -52,7 +53,8 @@ describe("contract - PUT /api/filters/numerator/:appId", () => {
             operator: "EQUALS",
             value: "blocked"
           }
-        ]
+        ],
+        configVersion: 2
       })
     }), { params: Promise.resolve({ appId }) });
     const invalidBody = await invalidResponse.json();
@@ -82,7 +84,8 @@ describe("contract - PUT /api/filters/numerator/:appId", () => {
             operator: "IN_LIST",
             value: "singleValue"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
 
@@ -107,7 +110,8 @@ describe("contract - PUT /api/filters/numerator/:appId", () => {
             operator: "EQUALS",
             value: "yes"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId: maestroAppId }) });
 
@@ -133,7 +137,8 @@ describe("contract - PUT /api/filters/numerator/:appId", () => {
             operator: "EQUALS",
             value: "true"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId: maestroAppId }) });
 
@@ -151,7 +156,8 @@ describe("contract - PUT /api/filters/numerator/:appId", () => {
             operator: "GREATER_THAN",
             value: "notanumber"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
 
@@ -173,7 +179,8 @@ describe("contract - PUT /api/filters/numerator/:appId", () => {
             operator: "GREATER_THAN",
             value: "99.5"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
 
@@ -191,7 +198,8 @@ describe("contract - PUT /api/filters/numerator/:appId", () => {
             operator: "GREATER_THAN",
             value: "05/07/2026"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
 
@@ -213,7 +221,8 @@ describe("contract - PUT /api/filters/numerator/:appId", () => {
             operator: "LESS_OR_EQUAL",
             value: "2026-05-07"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
 

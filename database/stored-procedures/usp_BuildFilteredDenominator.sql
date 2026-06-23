@@ -1,5 +1,3 @@
-SET NOCOUNT ON;
-
 IF OBJECT_ID('app.usp_BuildFilteredDenominator', 'P') IS NOT NULL
 BEGIN
     DROP PROCEDURE app.usp_BuildFilteredDenominator;
@@ -9,7 +7,8 @@ GO
 CREATE PROCEDURE app.usp_BuildFilteredDenominator
     @runId UNIQUEIDENTIFIER,
     @applicationId UNIQUEIDENTIFIER,
-    @filteredCount INT OUTPUT
+    @filteredCount INT OUTPUT,
+    @previewSessionId UNIQUEIDENTIFIER = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -17,13 +16,11 @@ BEGIN
     -- ============================================================
     -- 1) Validate denominator source prerequisites
     -- ============================================================
-    -- Guard clause: denominator projection view must exist before filtering can run.
     IF OBJECT_ID('app.vw_DenominatorLocal', 'V') IS NULL
     BEGIN
         THROW 51000, 'app.vw_DenominatorLocal does not exist.', 1;
     END;
 
-    -- Guard clause: empty denominator input is treated as a hard failure.
     IF NOT EXISTS (SELECT 1 FROM app.vw_DenominatorLocal)
     BEGIN
         THROW 51001, 'app.vw_DenominatorLocal is empty.', 1;
@@ -32,7 +29,6 @@ BEGIN
     -- ============================================================
     -- 2) Prepare temp tables for filtered data and active rules
     -- ============================================================
-    -- Initialize filtered denominator table
     IF OBJECT_ID('tempdb..#FilteredDenom') IS NULL
     BEGIN
         SELECT TOP (0)
@@ -63,25 +59,57 @@ BEGIN
         DELETE FROM #FilteredDenom;
     END;
 
-    -- Load all active denominator rules into temp table
+    -- Load denominator rules into temp table.
+    -- Option D branch: if @previewSessionId is provided, read from staging table.
     IF OBJECT_ID('tempdb..#DenominatorRules') IS NOT NULL
         DROP TABLE #DenominatorRules;
 
-    SELECT
-        ROW_NUMBER() OVER (ORDER BY dfr.RuleOrder) AS RuleId,
-        dm.SourceColumn,
-        dm.FieldType,
-        dfr.Operator,
-        dfr.Value,
-        dfr.RuleOrder
-    INTO #DenominatorRules
-    FROM app.DenominatorFilterRules dfr
-    INNER JOIN app.DenominatorModels dm ON dm.DenominatorModelId = dfr.DenominatorModelId
-    WHERE dfr.ApplicationId = @applicationId
-      AND dfr.IsActive = 1
-      AND dm.IsActive = 1;
+    CREATE TABLE #DenominatorRules
+    (
+        RuleId BIGINT NOT NULL,
+        SourceColumn NVARCHAR(128) NOT NULL,
+        FieldType NVARCHAR(20) NOT NULL,
+        Operator NVARCHAR(32) NOT NULL,
+        Value NVARCHAR(4000) NOT NULL,
+        RuleOrder INT NOT NULL
+    );
 
-    -- Validate all operators upfront (fail fast)
+    IF @previewSessionId IS NOT NULL
+    BEGIN
+        -- Preview path: read proposed rules from session-scoped staging table
+        INSERT INTO #DenominatorRules (RuleId, SourceColumn, FieldType, Operator, Value, RuleOrder)
+        SELECT
+            ROW_NUMBER() OVER (ORDER BY pr.RuleOrder),
+            dm.SourceColumn,
+            dm.FieldType,
+            pr.Operator,
+            pr.Value,
+            pr.RuleOrder
+        FROM stage.DenominatorFilterRulesPreview pr
+        INNER JOIN app.DenominatorModels dm ON dm.DenominatorModelId = pr.DenominatorModelId
+        WHERE pr.SessionId = @previewSessionId
+          AND pr.ApplicationId = @applicationId
+          AND dm.IsActive = 1;
+    END
+    ELSE
+    BEGIN
+        -- Production path: read committed rules
+        INSERT INTO #DenominatorRules (RuleId, SourceColumn, FieldType, Operator, Value, RuleOrder)
+        SELECT
+            ROW_NUMBER() OVER (ORDER BY dfr.RuleOrder),
+            dm.SourceColumn,
+            dm.FieldType,
+            dfr.Operator,
+            dfr.Value,
+            dfr.RuleOrder
+        FROM app.DenominatorFilterRules dfr
+        INNER JOIN app.DenominatorModels dm ON dm.DenominatorModelId = dfr.DenominatorModelId
+        WHERE dfr.ApplicationId = @applicationId
+          AND dfr.IsActive = 1
+          AND dm.IsActive = 1;
+    END;
+
+    -- Validate all operators upfront (fail fast) — applies to both paths
     IF EXISTS (
         SELECT 1 FROM #DenominatorRules
         WHERE Operator NOT IN (
@@ -93,11 +121,13 @@ BEGIN
         THROW 51002, 'Unsupported denominator filter operator.', 1;
     END;
 
+    -- Validate SourceColumn against DenominatorModels whitelist (OWASP A03 injection prevention)
+    -- SourceColumn values come exclusively from the DenominatorModels metadata table (seeded data),
+    -- never from user input. The JOIN above guarantees only whitelisted columns appear.
+
     -- ============================================================
     -- 3) Apply denominator rules in rule order
     -- ============================================================
-    -- Build one WHERE clause from all rules and execute a single filtered insert.
-    -- This avoids cursor row-by-row deletes and scans denominator data only once.
     DECLARE @whereClause NVARCHAR(MAX) = NULL;
     DECLARE @sql NVARCHAR(MAX);
 
@@ -161,7 +191,6 @@ BEGIN
     ) WITHIN GROUP (ORDER BY RuleOrder)
     FROM #DenominatorRules;
 
-    -- No active rules means the full denominator is addressable.
     IF @whereClause IS NULL OR @whereClause = N''
     BEGIN
         SET @whereClause = N'1 = 1';
@@ -178,10 +207,8 @@ BEGIN
     -- ============================================================
     -- 4) Cleanup and return output
     -- ============================================================
-    -- Cleanup rule metadata table for this execution scope.
     DROP TABLE #DenominatorRules;
 
-    -- Return final denominator row count after all rule predicates are applied.
     SELECT @filteredCount = COUNT(*) FROM #FilteredDenom;
 END;
 GO

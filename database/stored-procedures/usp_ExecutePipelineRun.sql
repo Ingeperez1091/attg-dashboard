@@ -1,5 +1,3 @@
-SET NOCOUNT ON;
-
 IF OBJECT_ID('app.usp_ExecutePipelineRun', 'P') IS NOT NULL
 BEGIN
     DROP PROCEDURE app.usp_ExecutePipelineRun;
@@ -10,74 +8,69 @@ CREATE PROCEDURE app.usp_ExecutePipelineRun
     @runId UNIQUEIDENTIFIER,
     @applicationId UNIQUEIDENTIFIER,
     @triggerSource NVARCHAR(64),
-    @actorUserId NVARCHAR(128)
+    @actorUserId NVARCHAR(128),
+    @previewSessionId UNIQUEIDENTIFIER = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
     BEGIN TRY
-        -- ============================================================
+        BEGIN TRANSACTION;
+
         -- 1) Mark run as Processing
-        -- ============================================================
-        -- Mark the run as started and transition lifecycle state to Processing.
         UPDATE app.PipelineRuns
         SET Status = 'Processing',
             StartTime = SYSUTCDATETIME(),
             UpdateDate = SYSUTCDATETIME(),
             UpdatedBy = @actorUserId
-        WHERE RunId = @runId
-          AND ApplicationId = @applicationId;
+        WHERE RunId = @runId;
 
-        DECLARE @numeratorRulesJson NVARCHAR(MAX);
-        DECLARE @denominatorRulesJson NVARCHAR(MAX);
-
-        -- ============================================================
         -- 2) Snapshot active rules used for this run
-        -- ============================================================
-        -- Snapshot active numerator rules as JSON for run-level traceability.
-        SELECT @numeratorRulesJson = (
-            SELECT
-                nfr.RuleId,
-                nfr.ApplicationModelFieldId,
-                amf.FieldName,
-                amf.SourcePath,
-                nfr.Operator,
-                nfr.Value,
-                nfr.RuleOrder
-            FROM app.NumeratorFilterRules nfr
-            INNER JOIN app.ApplicationModelFields amf ON amf.ApplicationModelFieldId = nfr.ApplicationModelFieldId
-            WHERE nfr.ApplicationId = @applicationId
-              AND nfr.IsActive = 1
-              AND amf.IsActive = 1
-            ORDER BY nfr.RuleOrder
-            FOR JSON PATH
-        );
-
-        -- Snapshot active denominator rules as JSON for run-level traceability.
-        SELECT @denominatorRulesJson = (
-            SELECT
-                dfr.RuleId,
-                dfr.DenominatorModelId,
-                dm.FieldName,
-                dm.SourceColumn,
-                dfr.Operator,
-                dfr.Value,
-                dfr.RuleOrder
-            FROM app.DenominatorFilterRules dfr
-            INNER JOIN app.DenominatorModels dm ON dm.DenominatorModelId = dfr.DenominatorModelId
-            WHERE dfr.ApplicationId = @applicationId
-              AND dfr.IsActive = 1
-              AND dm.IsActive = 1
-            ORDER BY dfr.RuleOrder
-            FOR JSON PATH
-        );
-
-        -- Upsert numerator and denominator rule snapshots for this pipeline run.
         MERGE app.FilterRuleSnapshots AS target
         USING (
-            SELECT NEWID() AS SnapshotId, @runId AS PipelineRunId, 'Numerator' AS RuleType, ISNULL(@numeratorRulesJson, '[]') AS RulesJson
+            -- Denominator rules snapshot
+            SELECT
+                NEWID() AS SnapshotId,
+                @runId AS PipelineRunId,
+                'Denominator' AS RuleType,
+                ISNULL((
+                    SELECT
+                        dfr.RuleId,
+                        dfr.ApplicationId,
+                        dfr.DenominatorModelId,
+                        dm.FieldName,
+                        dm.FieldType,
+                        dfr.Operator,
+                        dfr.Value,
+                        dfr.RuleOrder
+                    FROM app.DenominatorFilterRules dfr
+                    INNER JOIN app.DenominatorModels dm ON dm.DenominatorModelId = dfr.DenominatorModelId
+                    WHERE dfr.ApplicationId = @applicationId
+                      AND dfr.IsActive = 1
+                    FOR JSON PATH
+                ), '[]') AS RulesJson
             UNION ALL
-            SELECT NEWID() AS SnapshotId, @runId AS PipelineRunId, 'Denominator' AS RuleType, ISNULL(@denominatorRulesJson, '[]') AS RulesJson
+            -- Numerator rules snapshot
+            SELECT
+                NEWID() AS SnapshotId,
+                @runId AS PipelineRunId,
+                'Numerator' AS RuleType,
+                ISNULL((
+                    SELECT
+                        nfr.RuleId,
+                        nfr.ApplicationId,
+                        nfr.ApplicationModelFieldId,
+                        amf.FieldName,
+                        amf.FieldType,
+                        nfr.Operator,
+                        nfr.Value,
+                        nfr.RuleOrder
+                    FROM app.NumeratorFilterRules nfr
+                    INNER JOIN app.ApplicationModelFields amf ON amf.ApplicationModelFieldId = nfr.ApplicationModelFieldId
+                    WHERE nfr.ApplicationId = @applicationId
+                      AND nfr.IsActive = 1
+                    FOR JSON PATH
+                ), '[]') AS RulesJson
         ) AS source
         ON target.PipelineRunId = source.PipelineRunId AND target.RuleType = source.RuleType
         WHEN MATCHED THEN
@@ -92,7 +85,6 @@ BEGIN
         -- ============================================================
         -- 3) Build filtered denominator dataset for matching
         -- ============================================================
-        -- Recreate filtered denominator temp table for the current run scope.
         IF OBJECT_ID('tempdb..#FilteredDenom') IS NOT NULL
             DROP TABLE #FilteredDenom;
 
@@ -119,22 +111,22 @@ BEGIN
         INTO #FilteredDenom
         FROM app.vw_DenominatorLocal;
 
-        -- Execute denominator filtering and capture surviving row count.
         DECLARE @filteredDenominatorCount INT = 0;
         EXEC app.usp_BuildFilteredDenominator
             @runId = @runId,
             @applicationId = @applicationId,
-            @filteredCount = @filteredDenominatorCount OUTPUT;
+            @filteredCount = @filteredDenominatorCount OUTPUT,
+            @previewSessionId = @previewSessionId;
 
         -- Resolve application-specific matching settings with safe defaults.
         DECLARE @adoptionLevel NVARCHAR(32) = 'Engagement';
         DECLARE @metricSourcePath NVARCHAR(512);
         DECLARE @normalizedMetricSourcePath NVARCHAR(512);
+        DECLARE @isClientAdoption BIT = 0;
 
         SELECT TOP (1)
             @adoptionLevel = AdoptionLevel
-        FROM app.AdoptionSettings
-        WHERE ApplicationId = @applicationId;
+        FROM app.AdoptionSettings WHERE ApplicationId = @applicationId;
 
         SELECT TOP (1)
             @metricSourcePath = SourcePath
@@ -144,31 +136,22 @@ BEGIN
           AND IsMetricDimension = 1
         ORDER BY DisplayOrder, ApplicationModelFieldId;
 
-        IF @metricSourcePath IS NULL
-        BEGIN
-            THROW 51014, 'No active metric dimension field found for the application.', 1;
-        END;
+        SET @isClientAdoption = CASE WHEN LOWER(COALESCE(@adoptionLevel, '')) = 'client' THEN 1 ELSE 0 END;
 
+        -- Normalize metric source path for JSON_VALUE extraction
         SET @normalizedMetricSourcePath = CASE
+            WHEN @metricSourcePath IS NULL THEN NULL
             WHEN @metricSourcePath LIKE '$.payload.%' THEN '$.' + SUBSTRING(@metricSourcePath, 11, LEN(@metricSourcePath) - 10)
             ELSE @metricSourcePath
-        END;
-
-        -- Normalize adoption-level checks into a single flag for downstream readability.
-        DECLARE @isClientAdoption BIT = CASE
-            WHEN LOWER(COALESCE(@adoptionLevel, '')) = 'client' THEN 1
-            ELSE 0
         END;
 
         -- ============================================================
         -- 4) Parse staged numerator records and derive key/duplicate rank
         -- ============================================================
-        -- Parse staged numerator records and compute duplicate rank by effective record key.
         IF OBJECT_ID('tempdb..#ParsedNumerator') IS NOT NULL
             DROP TABLE #ParsedNumerator;
 
         ;WITH latest_stage AS (
-            -- Select only the most recent staged row for this application
             SELECT TOP (1) StageId
             FROM stage.EngagementUsageRaw
             WHERE ApplicationId = @applicationId
@@ -187,16 +170,18 @@ BEGIN
                     WHEN @isClientAdoption = 1 THEN JSON_VALUE(item.ItemJson, '$.clientId')
                     ELSE JSON_VALUE(item.ItemJson, '$.engagementId')
                 END AS RecordKey,
+                -- Composite key fields for dedup (always both)
+                JSON_VALUE(item.ItemJson, '$.clientId') AS ClientId,
+                JSON_VALUE(item.ItemJson, '$.engagementId') AS EngagementId,
+                -- Dedup uses composite key
                 ROW_NUMBER() OVER (
-                    PARTITION BY CASE
-                        WHEN @isClientAdoption = 1 THEN JSON_VALUE(item.ItemJson, '$.clientId')
-                        ELSE JSON_VALUE(item.ItemJson, '$.engagementId')
-                    END
+                    PARTITION BY
+                        JSON_VALUE(item.ItemJson, '$.clientId'),
+                        JSON_VALUE(item.ItemJson, '$.engagementId')
                     ORDER BY eur.StageId DESC, item.ItemIndex DESC
                 ) AS DuplicateRank
             FROM stage.EngagementUsageRaw eur
             CROSS APPLY (
-                -- Support both single-object payloads and arrays under $.payload (or root arrays).
                 SELECT
                     TRY_CONVERT(INT, j.[key]) AS ItemIndex,
                     j.value AS ItemJson
@@ -210,29 +195,27 @@ BEGIN
                         ELSE N'[]'
                     END
                 ) j
-
-                UNION ALL
-
-                SELECT
-                    NULL AS ItemIndex,
-                    eur.PayloadJson AS ItemJson
-                WHERE NOT (
-                    (JSON_QUERY(eur.PayloadJson, '$.payload') IS NOT NULL
+                WHERE (JSON_QUERY(eur.PayloadJson, '$.payload') IS NOT NULL
                      AND LEFT(LTRIM(JSON_QUERY(eur.PayloadJson, '$.payload')), 1) = '[')
                     OR LEFT(LTRIM(eur.PayloadJson), 1) = '['
-                )
             ) item
-            WHERE eur.ApplicationId = @applicationId
-              AND eur.StageId = (SELECT StageId FROM latest_stage)
+            INNER JOIN latest_stage ls ON eur.StageId = ls.StageId
         )
-        SELECT *
+        SELECT
+            ResultId,
+            StageId,
+            ItemIndex,
+            ItemJson,
+            RecordKey,
+            ClientId,
+            EngagementId,
+            DuplicateRank
         INTO #ParsedNumerator
         FROM parsed;
 
         -- ============================================================
         -- 5) Persist base validation outcomes
         -- ============================================================
-        -- Replace existing validation outcomes for idempotent reruns.
         DELETE FROM app.ValidationResults
         WHERE PipelineRunId = @runId
           AND ApplicationId = @applicationId;
@@ -250,7 +233,6 @@ BEGIN
             ItemJson NVARCHAR(MAX) NOT NULL
         );
 
-        -- Insert base validation outcomes (Invalid or Valid) before numerator filters.
         INSERT INTO app.ValidationResults
         (
             ResultId,
@@ -272,6 +254,10 @@ BEGIN
             @applicationId,
             pn.RecordKey,
             CASE
+                -- NULL composite key = Invalid (not duplicate)
+                WHEN pn.ClientId IS NULL OR LTRIM(RTRIM(pn.ClientId)) = ''
+                     OR pn.EngagementId IS NULL OR LTRIM(RTRIM(pn.EngagementId)) = ''
+                    THEN 'Invalid'
                 WHEN pn.RecordKey IS NULL OR LTRIM(RTRIM(pn.RecordKey)) = '' THEN 'Invalid'
                 WHEN @isClientAdoption = 1 AND NOT EXISTS (
                     SELECT 1 FROM #FilteredDenom fd WHERE CAST(fd.ClientID AS NVARCHAR(256)) = pn.RecordKey
@@ -282,6 +268,10 @@ BEGIN
                 ELSE 'Valid'
             END,
             CASE
+                WHEN pn.ClientId IS NULL OR LTRIM(RTRIM(pn.ClientId)) = ''
+                    THEN 'Missing key field: ClientId is NULL or empty'
+                WHEN pn.EngagementId IS NULL OR LTRIM(RTRIM(pn.EngagementId)) = ''
+                    THEN 'Missing key field: EngagementId is NULL or empty'
                 WHEN pn.RecordKey IS NULL OR LTRIM(RTRIM(pn.RecordKey)) = '' THEN 'Missing Engagement/Client ID'
                 WHEN @isClientAdoption = 1 AND NOT EXISTS (
                     SELECT 1 FROM #FilteredDenom fd WHERE CAST(fd.ClientID AS NVARCHAR(256)) = pn.RecordKey
@@ -318,7 +308,6 @@ BEGIN
         -- ============================================================
         -- 6) Apply numerator filters to current Valid records
         -- ============================================================
-        -- Apply numerator rules to downgrade non-compliant Valid rows to FilteredOut.
         DECLARE @filteredOutCount INT = 0;
         EXEC app.usp_ApplyNumeratorFilters
             @runId = @runId,
@@ -328,12 +317,10 @@ BEGIN
         -- ============================================================
         -- 7) Build matched records between valid numerator and filtered denominator
         -- ============================================================
-        -- Clear prior matched rows for this run to keep reruns deterministic.
         DELETE FROM app.MatchedRecords
         WHERE PipelineRunId = @runId
           AND ApplicationId = @applicationId;
 
-        -- Insert matched rows and derive numerator revenue from the app metric-dimension JSON field.
         INSERT INTO app.MatchedRecords
         (
             MatchedId,
@@ -387,7 +374,6 @@ BEGIN
         -- ============================================================
         -- 8) Aggregate metrics and finalize run
         -- ============================================================
-        -- Aggregate run-level metrics used by dashboard and API consumers.
         DECLARE @totalRecordsIn INT = 0;
         DECLARE @validCount INT = 0;
         DECLARE @invalidCount INT = 0;
@@ -410,54 +396,66 @@ BEGIN
           AND ApplicationId = @applicationId
           AND Status = 'Invalid';
 
-                -- DuplicateCount tracks repeated incoming numerator keys (beyond first occurrence).
-                SELECT @duplicateCount = COUNT(*)
-                FROM #ParsedNumerator
-                WHERE DuplicateRank > 1
-                    AND RecordKey IS NOT NULL
-                    AND LTRIM(RTRIM(RecordKey)) <> '';
+        SELECT @duplicateCount = COUNT(*)
+        FROM #ParsedNumerator
+        WHERE DuplicateRank > 1;
 
         SELECT @matchedCount = COUNT(*)
         FROM app.MatchedRecords
         WHERE PipelineRunId = @runId
           AND ApplicationId = @applicationId;
 
-        SELECT @snapshotDate = MAX(LoadDate)
-        FROM stage.DenominatorSnapshot;
+        SELECT TOP (1) @snapshotDate = LoadDate
+        FROM app.vw_DenominatorLocal;
 
+        -- Mark duplicate records in ValidationResults
+        UPDATE vr
+        SET vr.Status = 'Duplicate',
+            vr.ErrorMessage = CONCAT('Duplicate: ClientId=', pn.ClientId, ', EngagementId=', pn.EngagementId),
+            vr.UpdateDate = SYSUTCDATETIME(),
+            vr.UpdatedBy = @actorUserId
+        FROM app.ValidationResults vr
+        INNER JOIN #ParsedNumerator pn ON pn.ResultId = vr.ResultId
+        WHERE vr.PipelineRunId = @runId
+          AND vr.ApplicationId = @applicationId
+          AND pn.DuplicateRank > 1
+          AND vr.Status <> 'Invalid';
+
+        -- Execute metrics calculation
         EXEC app.usp_CalculateMetrics
             @runId = @runId,
             @applicationId = @applicationId,
-            @actorUserId = @actorUserId,
-            @sourceBatchId = NULL;
+            @actorUserId = @actorUserId;
 
-        -- Finalize run status and persist summary counters.
+        -- Finalize run status and counts
         UPDATE app.PipelineRuns
         SET Status = 'Completed',
             EndTime = SYSUTCDATETIME(),
-            SnapshotDate = @snapshotDate,
             TotalRecordsIn = @totalRecordsIn,
             ValidCount = @validCount,
             InvalidCount = @invalidCount,
             DuplicateCount = @duplicateCount,
             FilteredOutCount = @filteredOutCount,
             MatchedCount = @matchedCount,
-            ErrorMessage = NULL,
+            SnapshotDate = @snapshotDate,
             UpdateDate = SYSUTCDATETIME(),
             UpdatedBy = @actorUserId
-        WHERE RunId = @runId
-          AND ApplicationId = @applicationId;
+        WHERE RunId = @runId;
+
+        COMMIT TRANSACTION;
     END TRY
     BEGIN CATCH
-        -- Capture failure details and mark run as Failed before bubbling the error.
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+
+        -- Mark run as failed with error details
         UPDATE app.PipelineRuns
         SET Status = 'Failed',
             EndTime = SYSUTCDATETIME(),
-            ErrorMessage = CONCAT(ERROR_MESSAGE(), ' (Line ', ERROR_LINE(), ')'),
+            ErrorMessage = ERROR_MESSAGE(),
             UpdateDate = SYSUTCDATETIME(),
             UpdatedBy = @actorUserId
-        WHERE RunId = @runId
-          AND ApplicationId = @applicationId;
+        WHERE RunId = @runId;
 
         THROW;
     END CATCH;

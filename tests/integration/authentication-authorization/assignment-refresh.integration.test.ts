@@ -22,7 +22,7 @@ describe("integration - role and assignment changes apply on next authorization 
     const beforeResponse = await getApplicationModel(
       new Request(`http://localhost/api/applications/${appIdTwo}/numeratormodel`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${userId}` }
+        headers: { Cookie: `dev_user_id=${userId}` }
       }),
       { params: Promise.resolve({ appId: appIdTwo }) }
     );
@@ -34,7 +34,7 @@ describe("integration - role and assignment changes apply on next authorization 
     const afterResponse = await getApplicationModel(
       new Request(`http://localhost/api/applications/${appIdTwo}/numeratormodel`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${userId}` }
+        headers: { Cookie: `dev_user_id=${userId}` }
       }),
       { params: Promise.resolve({ appId: appIdTwo }) }
     );
@@ -49,18 +49,24 @@ describe("integration - role and assignment changes apply on next authorization 
       applicationIds: [appIdOne]
     });
 
+    const validPreviewBody = {
+      rules: [
+        {
+          denominatorModelId: "50000000-0000-0000-0007-000000000000",
+          operator: "EQUALS",
+          value: "11420"
+        }
+      ]
+    };
+
     const beforeResponse = await previewDenominatorRules(
       new Request(`http://localhost/api/filters/denominator/${appIdOne}/preview`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${userId}`,
+          Cookie: `dev_user_id=${userId}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          rules: [],
-          adoptionLevel: "engagement",
-          revenueBasis: "etd"
-        })
+        body: JSON.stringify(validPreviewBody)
       }),
       { params: Promise.resolve({ appId: appIdOne }) }
     );
@@ -73,18 +79,16 @@ describe("integration - role and assignment changes apply on next authorization 
       new Request(`http://localhost/api/filters/denominator/${appIdOne}/preview`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${userId}`,
+          Cookie: `dev_user_id=${userId}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          rules: [],
-          adoptionLevel: "engagement",
-          revenueBasis: "etd"
-        })
+        body: JSON.stringify(validPreviewBody)
       }),
       { params: Promise.resolve({ appId: appIdOne }) }
     );
 
+    // SSE stream returns 200 with text/event-stream for authorized users
     expect(afterResponse.status).toBe(200);
+    expect(afterResponse.headers.get("Content-Type")).toBe("text/event-stream");
   });
 });

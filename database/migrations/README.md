@@ -50,6 +50,18 @@ Run the full setup workflow with:
 .\scripts\database\setup-database.ps1 -UseTrustedConnection
 ```
 
+Or run setup with a full SQL connection string:
+
+```powershell
+.\scripts\database\setup-database.ps1 -ConnectionString "Server=attg.database.windows.net;Database=ATTG_Usage;User ID=your-user;Password=your-password;TrustServerCertificate=True;"
+```
+
+Or run setup with explicit SQL username/password:
+
+```powershell
+.\scripts\database\setup-database.ps1 -Server "attg.database.windows.net" -Database "ATTG_Usage" -Username "your-user" -Password "your-password" -TrustServerCertificate
+```
+
 Default target values are:
 
 - Server/Instance: `.\SQLEXPRESS`
@@ -59,6 +71,16 @@ To override defaults:
 
 ```powershell
 .\scripts\database\setup-database.ps1 -Server ".\SQLEXPRESS" -Database "ATTG_Usage" -UseTrustedConnection
+```
+
+To run migrations only (without full setup):
+
+```powershell
+# Full connection string
+.\scripts\database\run-migrations.ps1 -ConnectionString "Server=attg.database.windows.net;Database=ATTG_Usage;User ID=your-user;Password=your-password;TrustServerCertificate=True;"
+
+# Explicit SQL username/password
+.\scripts\database\run-migrations.ps1 -ServerInstance "attg.database.windows.net" -Database "ATTG_Usage" -Username "your-user" -Password "your-password" -TrustServerCertificate
 ```
 
 The script will:
@@ -77,6 +99,18 @@ Run rollback in descending order with:
 
 ```powershell
 .\scripts\database\run-rollback.ps1 -UseTrustedConnection
+```
+
+Rollback with a full SQL connection string:
+
+```powershell
+.\scripts\database\run-rollback.ps1 -ConnectionString "Server=attg.database.windows.net;Database=ATTG_Usage;User ID=your-user;Password=your-password;TrustServerCertificate=True;"
+```
+
+Rollback with explicit SQL username/password:
+
+```powershell
+.\scripts\database\run-rollback.ps1 -ServerInstance "attg.database.windows.net" -Database "ATTG_Usage" -Username "your-user" -Password "your-password" -TrustServerCertificate
 ```
 
 Default rollback range is currently:

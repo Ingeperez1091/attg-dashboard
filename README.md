@@ -4,19 +4,36 @@ ATTG Analytics Dashboard is a Next.js + TypeScript application for tracking EY a
 
 ## Table of Contents
 
-- [What This Project Does](#what-this-project-does)
-- [Tech Stack](#tech-stack)
-- [Prerequisites](#prerequisites)
-- [Project Structure](#project-structure)
-- [Local Setup](#local-setup)
-- [Database Migrations and Rollback](#database-migrations-and-rollback)
-- [Environment Variables](#environment-variables)
-- [Local SQL Connection](#local-sql-connection)
-- [npm Scripts](#npm-scripts)
-- [Testing](#testing)
-- [CI Pipeline](#ci-pipeline)
-- [Deployment Helpers](#deployment-helpers)
-- [Contributing](#contributing)
+- [attganalyticsdashboard](#attganalyticsdashboard)
+  - [Table of Contents](#table-of-contents)
+  - [What This Project Does](#what-this-project-does)
+  - [Tech Stack](#tech-stack)
+  - [Prerequisites](#prerequisites)
+  - [Project Structure](#project-structure)
+  - [Local Setup](#local-setup)
+    - [1. Install dependencies](#1-install-dependencies)
+    - [2. Configure environment](#2-configure-environment)
+    - [3. (Optional) Run schema migrations](#3-optional-run-schema-migrations)
+    - [4. (Optional) Run rollback scripts](#4-optional-run-rollback-scripts)
+    - [5. (Optional) Provision the local database](#5-optional-provision-the-local-database)
+    - [6. Start the dev server](#6-start-the-dev-server)
+  - [Database Migrations and Rollback](#database-migrations-and-rollback)
+  - [Environment Variables](#environment-variables)
+    - [Microsoft Entra ID Callback URL](#microsoft-entra-id-callback-url)
+    - [Testing Microsoft Entra SSO in development](#testing-microsoft-entra-sso-in-development)
+  - [Logging \& Diagnostics](#logging--diagnostics)
+    - [Log Channels](#log-channels)
+    - [Operation Logger Phases](#operation-logger-phases)
+    - [Log Line Format](#log-line-format)
+    - [Filtering Logs in Production](#filtering-logs-in-production)
+    - [Environment Variables for Logging](#environment-variables-for-logging)
+    - [Security](#security)
+  - [Local SQL Connection](#local-sql-connection)
+  - [npm Scripts](#npm-scripts)
+  - [Testing](#testing)
+  - [Deployment Helpers](#deployment-helpers)
+  - [CI Pipeline](#ci-pipeline)
+  - [Contributing](#contributing)
 
 ## What This Project Does
 
@@ -181,6 +198,12 @@ Use the migration runner to apply ordered SQL scripts from `database/migrations`
 # Default range for Epic 005 migrations (006 through 009)
 .\scripts\database\run-migrations.ps1 -ServerInstance ".\SQLEXPRESS" -Database "ATTG_Usage" -UseTrustedConnection
 
+# Example: run with full SQL connection string
+.\scripts\database\run-migrations.ps1 -ConnectionString "Server=attg.database.windows.net;Database=ATTG_Usage;User ID=your-user;Password=your-password;TrustServerCertificate=True;"
+
+# Example: run with explicit SQL username/password
+.\scripts\database\run-migrations.ps1 -ServerInstance "attg.database.windows.net" -Database "ATTG_Usage" -Username "your-user" -Password "your-password" -TrustServerCertificate
+
 # Example: run only a subset
 .\scripts\database\run-migrations.ps1 -ServerInstance ".\SQLEXPRESS" -Database "ATTG_Usage" -From 6 -To 7 -UseTrustedConnection
 ```
@@ -193,6 +216,12 @@ Use the rollback runner to execute scripts from `database/rollback` in descendin
 # Default rollback range for Epic 005 migrations (009 down to 006)
 .\scripts\database\run-rollback.ps1 -ServerInstance ".\SQLEXPRESS" -Database "ATTG_Usage" -UseTrustedConnection $true
 
+# Example: rollback with full SQL connection string
+.\scripts\database\run-rollback.ps1 -ConnectionString "Server=attg.database.windows.net;Database=ATTG_Usage;User ID=your-user;Password=your-password;TrustServerCertificate=True;"
+
+# Example: rollback with explicit SQL username/password
+.\scripts\database\run-rollback.ps1 -ServerInstance "attg.database.windows.net" -Database "ATTG_Usage" -Username "your-user" -Password "your-password" -TrustServerCertificate
+
 # Example: rollback only 009 to 008
 .\scripts\database\run-rollback.ps1 -ServerInstance ".\SQLEXPRESS" -Database "ATTG_Usage" -From 9 -To 8 -UseTrustedConnection $true
 ```
@@ -201,6 +230,12 @@ Use the rollback runner to execute scripts from `database/rollback` in descendin
 
 ```powershell
 .\scripts\database\setup-database.ps1 -UseTrustedConnection
+
+# Example: setup with full SQL connection string
+.\scripts\database\setup-database.ps1 -ConnectionString "Server=attg.database.windows.net;Database=ATTG_Usage;User ID=your-user;Password=your-password;TrustServerCertificate=True;"
+
+# Example: setup with explicit SQL username/password
+.\scripts\database\setup-database.ps1 -Server "attg.database.windows.net" -Database "ATTG_Usage" -Username "your-user" -Password "your-password" -TrustServerCertificate
 ```
 
 ### 6. Start the dev server
@@ -224,6 +259,9 @@ Common parameters:
 |----------|-------------|---------|
 | `ServerInstance` | SQL Server instance (for example `.\SQLEXPRESS`) | `.\SQLEXPRESS` |
 | `Database` | Target database name | `ATTG_Usage` |
+| `ConnectionString` | Full SQL connection string (can include server, database, auth, and trust options) | Empty |
+| `Username` | SQL login username (requires `Password`) | Empty |
+| `Password` | SQL login password (requires `Username`) | Empty |
 | `From` | Starting migration index | `6` (migrations), `9` (rollback) |
 | `To` | Ending migration index | `9` (migrations), `6` (rollback) |
 | `UseTrustedConnection` | Use Windows auth (`sqlcmd -E`) | Off for migrations, On for rollback |
@@ -232,6 +270,7 @@ Notes:
 
 - `sqlcmd` must be installed and available on PATH.
 - Migration and rollback scripts stop on first SQL error (`sqlcmd -b`).
+- Use either `UseTrustedConnection` or `Username`/`Password` for authentication.
 
 ## Environment Variables
 
@@ -269,6 +308,193 @@ When configuring your Entra app registration, add this redirect URI:
 ### Testing Microsoft Entra SSO in development
 
 To force real SSO instead of the dev bypass, set `ENABLE_DEV_BYPASS=false` in [src/frontend/.env.development.local](src/frontend/.env.development.local) and restart `npm run dev`.
+
+## Logging & Diagnostics
+
+The application emits structured JSON log lines to `stdout`/`stderr` for runtime diagnostics. Three log channels are used:
+
+### Log Channels
+
+| Prefix | File | Purpose |
+|--------|------|---------|
+| `[api-op]` | `lib/api/operation-logger.ts` | API route lifecycle (start, success, validation failure, auth failure, error) |
+| `[request]` | `lib/api/request-logger.ts` | Request start/end with latency and status |
+| `[audit]` | `lib/api/audit-logger.ts` | User creation success/failure and SSO identity binding |
+| `[app-trace]` | `lib/runtime-trace.ts` | Low-level boot/session/SQL trace (opt-in via `APP_BOOT_TRACE=true`) |
+
+### Operation Logger Phases
+
+Every API route emits `[api-op]` logs at key lifecycle points:
+
+| Phase | Level | When |
+|-------|-------|------|
+| `start` | info | Request received |
+| `success` | info | Handler returned 2xx |
+| `validation-failure` | warn | Zod schema validation failed |
+| `auth-failure` | warn | 401/403 from auth guards |
+| `error` | error | Unhandled exception or 4xx/5xx error |
+
+### Log Line Format
+
+```json
+{
+  "phase": "error",
+  "method": "POST",
+  "path": "/api/admin/users",
+  "callerUserId": "30000000-0000-0000-0000-000000000001",
+  "requestId": "a1b2c3d4-...",
+  "status": 400,
+  "latencyMs": 12,
+  "error": { "name": "AppError", "message": "Username may only contain letters..." },
+  "timestamp": "2026-05-21T14:30:00.000Z"
+}
+```
+
+### Filtering Logs in Production
+
+In Azure App Service Log Stream or Application Insights:
+
+```text
+# All API operation traces
+[api-op]
+
+# Only errors and exceptions
+"phase":"error"
+
+# Only validation failures (bad user input)
+"phase":"validation-failure"
+
+# Only auth failures (missing token, wrong role)
+"phase":"auth-failure"
+
+# Trace a specific request across all log channels
+<requestId value>
+```
+
+### Environment Variables for Logging
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `APP_BOOT_TRACE` | No | Set to `true` to enable verbose `[app-trace]` logs (session resolution, SQL queries, repository calls). Disabled by default in production. |
+
+### Security
+
+- Sensitive fields (`password`, `token`, `secret`, `authorization`) are automatically stripped from log output.
+- Error stack traces are truncated to 5 frames.
+- User IDs are logged as-is for correlation; PII fields (email) are masked in `[app-trace]` channel.
+
+## Authentication & Session Architecture
+
+### Overview
+
+The application uses a **WAF-safe session architecture** that avoids sending large cookies on every request. Authentication flows through Microsoft Entra ID (OAuth 2.0) via Auth.js v5, but the persistent session credential is a **Bearer token stored in `sessionStorage`** — not a cookie.
+
+### Authentication Flow (Production SSO)
+
+```
+┌─────────┐     ┌────────────┐     ┌──────────────┐     ┌────────────────────┐
+│ Browser │────▶│ /login      │────▶│ Microsoft    │────▶│ /api/auth/callback │
+│         │     │ (sign-in)   │     │ Entra ID     │     │ (Auth.js handler)  │
+└─────────┘     └────────────┘     └──────────────┘     └─────────┬──────────┘
+                                                                    │
+                                                                    ▼
+                                                         ┌──────────────────────┐
+                                                         │ Auth.js sets JWT     │
+                                                         │ session cookie       │
+                                                         │ (path: /api/auth)    │
+                                                         └─────────┬────────────┘
+                                                                   │ redirect
+                                                                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ Page loads → SessionProvider mounts → POST /api/auth/session-token              │
+│   • Sends Auth.js cookie (scoped to /api/auth, so included)                     │
+│   • Server verifies JWT, resolves internal user                                 │
+│   • Returns AES-256-GCM encrypted Bearer token (15 min TTL)                    │
+│   • Response also sets attg_sid cookie (HMAC-signed userId, ~80 bytes, path /) │
+│   • Response clears the Auth.js session cookie (no longer needed)               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                                                   │
+                                                                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ Client stores Bearer token in sessionStorage                                    │
+│ Fetch interceptor attaches Authorization: Bearer <token> to all /api/* calls    │
+│ AuthGuard resolves → page renders                                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Cookies
+
+| Cookie | Path | Size | Purpose | Lifetime |
+|--------|------|------|---------|----------|
+| `attg_sid` | `/` | ~80 bytes | HMAC-signed userId for server-component auth | 24 hours |
+| `authjs.session-token` | `/api/auth` | ~600 bytes | Auth.js JWT (only during OAuth exchange) | Cleared after token exchange |
+| `authjs.callback-url` | `/api/auth` | ~50 bytes | Auth.js OAuth state | 120 seconds |
+| `authjs.csrf-token` | `/api/auth` | ~150 bytes | Auth.js CSRF protection | 120 seconds |
+
+The `authjs.session-token` is scoped to `/api/auth` so it is **never sent on page navigations** or regular API calls, avoiding WAF cookie-size interference.
+
+### Session Resolution Priority (server-side)
+
+When a server component or API route calls `getOptionalSession(request, repositories)`, identity is resolved in this order:
+
+1. **Bearer token** (`Authorization: Bearer <token>` header) — used by client-side API calls via the fetch interceptor.
+2. **Auth.js session** (`auth()` call) — fallback during OAuth callback, rarely used post-login.
+3. **`attg_sid` cookie** (HMAC-signed userId at path `/`) — used by server components on page navigations after the initial token exchange.
+4. **Dev bypass** (`dev_user_id` cookie or `DEV_SESSION_USER_ID` env var) — local development and e2e tests only.
+
+### Client-Side Auth (AuthGuard + SessionProvider)
+
+- `SessionProvider` (React context) manages the Bearer token lifecycle:
+  - On mount: checks `sessionStorage` for an existing token → verifies via `POST /api/auth/verify`.
+  - If no stored token: calls `POST /api/auth/session-token` to exchange the session cookie for a Bearer token.
+  - Silent refresh: re-issues a fresh token every 10 minutes (before 15-min TTL expires).
+- `AuthGuard` wraps all authenticated pages:
+  - While loading: renders a loading indicator.
+  - If no session: redirects to `/login?returnUrl=...`.
+  - If session resolved: renders children.
+- A **frozen fetch interceptor** (`Object.defineProperty` with `configurable: false`) automatically attaches the Bearer token to all `/api/*` requests (excluding `/api/auth/*`).
+
+### Middleware
+
+The middleware (`src/frontend/middleware.ts`) is a plain `NextRequest` function (not wrapped with `auth()`). It:
+
+1. Normalizes IISNode pipe-prefixed paths.
+2. Generates and propagates `x-request-id` and CSP nonce.
+3. Passes through `/api/auth/*` routes unconditionally (OAuth flow).
+4. **Deny-by-default** for other `/api/*` routes — requires a `Bearer` token in the `Authorization` header (or dev bypass in non-production).
+5. Allows page routes through (client-side AuthGuard handles page auth).
+
+### Token Structure
+
+Bearer tokens are **AES-256-GCM encrypted + HMAC-SHA256 signed** using `SESSION_TOKEN_SECRET`. Claims include `userId`, `role`, `isActive`, `applications[]`, `oid`, `email`. Tokens are opaque to the client — they cannot be decoded without the server secret.
+
+### Secret Rotation
+
+Zero-downtime rotation is supported via `SESSION_TOKEN_SECRET_PREVIOUS`:
+1. Set the new secret in `SESSION_TOKEN_SECRET`.
+2. Move the old secret to `SESSION_TOKEN_SECRET_PREVIOUS`.
+3. After 15 minutes (one full token TTL), remove `SESSION_TOKEN_SECRET_PREVIOUS`.
+
+### Environment Variables (Auth)
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `AUTH_SECRET` | Yes | Auth.js signing/encryption secret |
+| `SESSION_TOKEN_SECRET` | Yes | ≥32 chars. Encrypts/signs Bearer tokens and `attg_sid` cookie |
+| `SESSION_TOKEN_SECRET_PREVIOUS` | No | Previous secret for zero-downtime rotation |
+| `AUTH_MICROSOFT_ENTRA_ID_ID` | Prod | Microsoft Entra app registration client ID |
+| `AUTH_MICROSOFT_ENTRA_ID_SECRET` | Prod | Microsoft Entra app registration client secret |
+| `AUTH_MICROSOFT_ENTRA_ID_TENANT_ID` | Prod | Microsoft Entra tenant ID |
+| `ENABLE_DEV_BYPASS` | Dev | `true` (default in dev) enables cookie-based dev login; `false` forces real SSO |
+| `DEV_SESSION_USER_ID` | Dev | Fallback userId when no auth credential is present |
+
+### Dev Bypass (Local Development & E2E Tests)
+
+In non-production mode (unless `ENABLE_DEV_BYPASS=false`):
+- `POST /api/auth/dev-login` sets a `dev_user_id` httpOnly cookie and returns the userId.
+- The `dev_user_id` cookie is recognized by the middleware (allows API access) and by the session-token endpoint (issues a Bearer token without requiring Auth.js session).
+- E2E tests use `page.context().addCookies()` to inject the `dev_user_id` cookie directly.
+- Dev auth routes (`/api/auth/dev-*`) are **blocked in production** (returns 404).
 
 ## Local SQL Connection
 

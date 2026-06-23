@@ -1,6 +1,7 @@
 import { getContainer } from "@/lib/di/container";
 import { getRuntimeRepositories } from "@/infrastructure/persistence/runtime/repositories";
 import { evaluateAdminUsersRouteAccess } from "@/lib/auth/admin-access";
+import { createServerRequest } from "@/lib/auth/server-request";
 import { AdminUserDto } from "@/core/application/dto/admin/AdminUserDto";
 import { ApplicationPickerOptionDto } from "@/core/application/dto/applications/ApplicationOptionDto";
 import { UsersPageClient } from "@/app/admin/users/components/users-page-client";
@@ -14,6 +15,7 @@ async function mapAdminUsers(container: ReturnType<typeof getContainer>, users: 
 
       return {
         userId: user.userId,
+        username: user.username,
         email: user.email,
         displayName: user.displayName,
         azureAdObjectId: user.azureAdObjectId,
@@ -33,7 +35,8 @@ async function mapAdminUsers(container: ReturnType<typeof getContainer>, users: 
 
 async function renderAdminUsersPage(): Promise<ReactElement> {
   const container = getContainer();
-  const access = await evaluateAdminUsersRouteAccess(getRuntimeRepositories());
+  const request = await createServerRequest();
+  const access = await evaluateAdminUsersRouteAccess(request, getRuntimeRepositories());
 
   if (access.status !== 200) {
     return <section>Unauthorized</section>;

@@ -50,7 +50,7 @@ describe("integration - denominator filter view authorization", () => {
     const response = await GET(new Request(`http://localhost/api/filters/denominator/${appId}`, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${viewerUserId}`
+        Cookie: `dev_user_id=${viewerUserId}`
       }
     }), { params: Promise.resolve({ appId }) });
 
@@ -63,7 +63,7 @@ describe("integration - denominator filter view authorization", () => {
     const response = await GET(new Request(`http://localhost/api/filters/denominator/${appId}`, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${ownerUserId}`
+        Cookie: `dev_user_id=${ownerUserId}`
       }
     }), { params: Promise.resolve({ appId }) });
 

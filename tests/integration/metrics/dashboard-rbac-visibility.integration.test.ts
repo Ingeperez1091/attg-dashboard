@@ -80,7 +80,7 @@ describe("dashboard integration - role scoped payload visibility", () => {
       new Request("http://localhost/api/dashboard/usage", {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${viewer.userId}`
+          Cookie: `dev_user_id=${viewer.userId}`
         }
       })
     );

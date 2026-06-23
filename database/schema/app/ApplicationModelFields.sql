@@ -18,6 +18,17 @@ BEGIN
         CONSTRAINT FK_ApplicationModelFields_Applications FOREIGN KEY (ApplicationId) REFERENCES app.Applications(ApplicationId),
         CONSTRAINT UQ_ApplicationModelFields_Application_Field UNIQUE (ApplicationId, FieldName),
         CONSTRAINT CK_ApplicationModelFields_FieldType CHECK (FieldType IN ('text', 'numeric', 'boolean', 'date')),
-        CONSTRAINT CK_ApplicationModelFields_DisplayOrder CHECK (DisplayOrder >= 0)
+        CONSTRAINT CK_ApplicationModelFields_DisplayOrder CHECK (DisplayOrder >= 0),
+        CONSTRAINT CK_ApplicationModelFields_FieldName_SafeIdentifier CHECK (
+            LEN(FieldName) >= 1
+            AND FieldName LIKE '[A-Za-z_]%'
+            AND FieldName NOT LIKE '%[^A-Za-z0-9_]%'
+        ),
+        CONSTRAINT CK_ApplicationModelFields_SourcePath_SafeJsonPath CHECK (
+            LEN(SourcePath) >= 3
+            AND LEFT(SourcePath, 2) = '$.'
+            AND SUBSTRING(SourcePath, 3, LEN(SourcePath) - 2) LIKE '[A-Za-z_]%'
+            AND SUBSTRING(SourcePath, 3, LEN(SourcePath) - 2) NOT LIKE '%[^A-Za-z0-9_.]%'
+        )
     );
 END;

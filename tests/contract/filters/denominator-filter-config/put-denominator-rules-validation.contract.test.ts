@@ -40,7 +40,8 @@ describe("contract - PUT /api/filters/denominator/:appId validation", () => {
             operator: "EQUALS",
             value: "11300"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
 
@@ -56,7 +57,8 @@ describe("contract - PUT /api/filters/denominator/:appId validation", () => {
             operator: "EQUALS",
             value: "blocked"
           }
-        ]
+        ],
+        configVersion: 2
       })
     }), { params: Promise.resolve({ appId }) });
 
@@ -88,7 +90,8 @@ describe("contract - PUT /api/filters/denominator/:appId validation", () => {
             operator: "IN_LIST",
             value: "single"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
 
@@ -110,7 +113,8 @@ describe("contract - PUT /api/filters/denominator/:appId validation", () => {
             operator: "GREATER_THAN",
             value: "05/07/2026"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
 
@@ -132,7 +136,8 @@ describe("contract - PUT /api/filters/denominator/:appId validation", () => {
             operator: "GREATER_OR_EQUAL",
             value: "2026-05-07"
           }
-        ]
+        ],
+        configVersion: 1
       })
     }), { params: Promise.resolve({ appId }) });
 

@@ -10,7 +10,7 @@ import { ValidationSummary } from "./ValidationSummary";
 import { Spinner } from "./Spinner";
 import { useUserAuditMetadata } from "./hooks/useUserAuditMetadata";
 
-interface UserFormPanelProps {
+type UserFormPanelProps = Readonly<{
   mode: "create" | "edit";
   /** When mode is "edit", the current user data to pre-fill */
   user?: AdminUserDto;
@@ -20,7 +20,7 @@ interface UserFormPanelProps {
   onClose: () => void;
   /** Called with the created/updated userId on success */
   onSuccess?: (userId: string) => void;
-}
+}>;
 
 function validateFields(fields: {
   username: string;
@@ -29,6 +29,8 @@ function validateFields(fields: {
 }): string[] {
   const errs: string[] = [];
   if (!fields.username.trim()) errs.push("Username is required.");
+  else if (!/^[a-zA-Z0-9._-]+$/.test(fields.username))
+    errs.push("Username may only contain letters, numbers, periods, underscores, and hyphens.");
   if (!fields.email.trim()) errs.push("Email address is required.");
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email))
     errs.push("Email must be a valid address.");
@@ -55,7 +57,7 @@ export function UserFormPanel({
   onClose,
   onSuccess,
 }: UserFormPanelProps): ReactElement {
-  const [username, setUsername] = useState(user ? user.email.split("@")[0] : "");
+  const [username, setUsername] = useState(user?.username ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
   const [displayName, setDisplayName] = useState(user?.displayName ?? "");
   const [role, setRole] = useState<RoleName>(user?.role ?? "viewer");

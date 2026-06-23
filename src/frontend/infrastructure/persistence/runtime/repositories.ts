@@ -20,6 +20,15 @@ import { MetricsMemoryRepository } from "@/infrastructure/persistence/memory/Met
 import { DashboardUsageRepository } from "@/core/domain/repositories/dashboardUsageRepository";
 import { DashboardUsageDbRepository } from "@/infrastructure/persistence/database/DashboardUsageDbRepository";
 import { DashboardUsageMemoryRepository } from "@/infrastructure/persistence/memory/DashboardUsageMemoryRepository";
+import { createRepositoryTraceProxy } from "@/lib/runtime-trace";
+import { IDenominatorPreviewRepository } from "@/core/domain/repositories/IDenominatorPreviewRepository";
+import { DenominatorPreviewMemoryRepository } from "@/infrastructure/persistence/memory/DenominatorPreviewMemoryRepository";
+import { DenominatorPreviewDbRepository } from "@/infrastructure/persistence/database/DenominatorPreviewDbRepository";
+import { IConfigVersionRepository } from "@/core/domain/repositories/IConfigVersionRepository";
+import { ConfigVersionMemoryRepository } from "@/infrastructure/persistence/memory/ConfigVersionMemoryRepository";
+import { ConfigVersionDbRepository } from "@/infrastructure/persistence/database/ConfigVersionDbRepository";
+import { IConfigEditSessionRepository, ConfigEditSessionMemoryRepository } from "@/infrastructure/persistence/memory/ConfigEditSessionMemoryRepository";
+import { ConfigEditSessionDbRepository } from "@/infrastructure/persistence/database/ConfigEditSessionDbRepository";
 
 declare global {
   var __attgRuntimeRepositories: RepositoryBundle | undefined;
@@ -30,6 +39,9 @@ let validationPipelineRepository: IValidationPipelineRepository | null = null;
 let adfPipelineClient: IADFPipelineClient | null = null;
 let metricsRepository: IMetricsRepository | null = null;
 let dashboardUsageRepository: DashboardUsageRepository | null = null;
+let denominatorPreviewRepository: IDenominatorPreviewRepository | null = null;
+let configVersionRepository: IConfigVersionRepository | null = null;
+let configEditSessionRepository: IConfigEditSessionRepository | null = null;
 
 function clearInMemoryRepoStoresForTests(): void {
   const globalStore = globalThis as typeof globalThis & {
@@ -74,6 +86,9 @@ export function resetRuntimeRepositoriesForTests(): void {
   adfPipelineClient = null;
   metricsRepository = null;
   dashboardUsageRepository = null;
+  denominatorPreviewRepository = null;
+  configVersionRepository = null;
+  configEditSessionRepository = null;
   globalThis.__attgRuntimeRepositories = undefined;
   clearInMemoryRepoStoresForTests();
 }
@@ -86,15 +101,13 @@ export function getRuntimeValidationPipelineRepository(): IValidationPipelineRep
   const env = getAppEnv();
   validationPipelineRepository = env.repositoryMode === "memory"
     ? new ValidationPipelineMemoryRepository()
-    : new ValidationPipelineDbRepository(createRuntimeSqlClient());
+    : createRepositoryTraceProxy(new ValidationPipelineDbRepository(createRuntimeSqlClient()), "validationPipelineRepository");
 
   return validationPipelineRepository;
 }
 
 export function getRuntimeADFPipelineClient(): IADFPipelineClient {
-  if (!adfPipelineClient) {
-    adfPipelineClient = new ADFPipelineClient();
-  }
+  adfPipelineClient ??= new ADFPipelineClient();
 
   return adfPipelineClient;
 }
@@ -107,7 +120,7 @@ export function getRuntimeMetricsRepository(): IMetricsRepository {
   const env = getAppEnv();
   metricsRepository = env.repositoryMode === "memory"
     ? new MetricsMemoryRepository()
-    : new MetricsDbRepository(createRuntimeSqlClient());
+    : createRepositoryTraceProxy(new MetricsDbRepository(createRuntimeSqlClient()), "metricsRepository");
 
   return metricsRepository;
 }
@@ -120,7 +133,7 @@ export function getRuntimeDashboardUsageRepository(): DashboardUsageRepository {
   const env = getAppEnv();
   dashboardUsageRepository = env.repositoryMode === "memory"
     ? new DashboardUsageMemoryRepository()
-    : new DashboardUsageDbRepository(createRuntimeSqlClient());
+    : createRepositoryTraceProxy(new DashboardUsageDbRepository(createRuntimeSqlClient()), "dashboardUsageRepository");
 
   return dashboardUsageRepository;
 }
@@ -183,4 +196,43 @@ export function listInMemoryStagedRowsForTests() {
 export function logRepositoryMode(): void {
   const env = getAppEnv();
   console.info(`[repository-mode] active=${env.repositoryMode}`);
+}
+
+export function getRuntimeDenominatorPreviewRepository(): IDenominatorPreviewRepository {
+  if (denominatorPreviewRepository) {
+    return denominatorPreviewRepository;
+  }
+
+  const env = getAppEnv();
+  denominatorPreviewRepository = env.repositoryMode === "memory"
+    ? new DenominatorPreviewMemoryRepository()
+    : createRepositoryTraceProxy(new DenominatorPreviewDbRepository(createRuntimeSqlClient()), "denominatorPreviewRepository");
+
+  return denominatorPreviewRepository;
+}
+
+export function getRuntimeConfigVersionRepository(): IConfigVersionRepository {
+  if (configVersionRepository) {
+    return configVersionRepository;
+  }
+
+  const env = getAppEnv();
+  configVersionRepository = env.repositoryMode === "memory"
+    ? new ConfigVersionMemoryRepository()
+    : createRepositoryTraceProxy(new ConfigVersionDbRepository(createRuntimeSqlClient()), "configVersionRepository");
+
+  return configVersionRepository;
+}
+
+export function getRuntimeConfigEditSessionRepository(): IConfigEditSessionRepository {
+  if (configEditSessionRepository) {
+    return configEditSessionRepository;
+  }
+
+  const env = getAppEnv();
+  configEditSessionRepository = env.repositoryMode === "memory"
+    ? new ConfigEditSessionMemoryRepository()
+    : createRepositoryTraceProxy(new ConfigEditSessionDbRepository(createRuntimeSqlClient()), "configEditSessionRepository");
+
+  return configEditSessionRepository;
 }

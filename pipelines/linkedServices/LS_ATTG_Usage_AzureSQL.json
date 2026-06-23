@@ -1,0 +1,22 @@
+{
+  "name": "LS_ATTG_Usage_AzureSQL",
+  "properties": {
+    "description": "Connection to the ATTG Analytics application database (Azure SQL) used as pipeline sink and stored procedure host.",
+    "type": "AzureSqlDatabase",
+    "typeProperties": {
+      "connectionString": {
+        "type": "AzureKeyVaultSecret",
+        "store": {
+          "referenceName": "LS_KeyVault",
+          "type": "LinkedServiceReference"
+        },
+        "secretName": "ATTGUsageAzureSqlConnectionString"
+      }
+    },
+    "annotations": [
+      "application-db",
+      "denominator-sink",
+      "pipeline-execution"
+    ]
+  }
+}

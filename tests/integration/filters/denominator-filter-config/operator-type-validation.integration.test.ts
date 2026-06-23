@@ -36,9 +36,10 @@ describe("integration - operator type enforcement by field type", () => {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            rules: [{ denominatorModelId: textFieldId, operator, value }]
-          })
-        }),
+            rules: [{ denominatorModelId: textFieldId, operator, value }],
+          configVersion: 1
+        })
+      }),
         { params: Promise.resolve({ appId }) }
       );
 
@@ -67,9 +68,10 @@ describe("integration - operator type enforcement by field type", () => {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            rules: [{ denominatorModelId: numericFieldId, operator, value }]
-          })
-        }),
+            rules: [{ denominatorModelId: numericFieldId, operator, value }],
+          configVersion: 1
+        })
+      }),
         { params: Promise.resolve({ appId }) }
       );
 
@@ -97,9 +99,10 @@ describe("integration - operator type enforcement by field type", () => {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            rules: [{ denominatorModelId: dateFieldId, operator, value }]
-          })
-        }),
+            rules: [{ denominatorModelId: dateFieldId, operator, value }],
+          configVersion: 1
+        })
+      }),
         { params: Promise.resolve({ appId }) }
       );
 
